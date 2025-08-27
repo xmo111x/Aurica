@@ -11,3 +11,25 @@ pip install -r requirements.txt
 cp .env.example .env  # Pfade setzen
 python app.py
 ```
+### Erklärung
+
+Hallo, dies ist mein erstes GitHub-Projekt. Ja, sogar mein erstes Projekt überhaupt. Man möge mir meine Fehler und Fauxpas verzeihen. Ich hoffe auf konstruktive Beiträge der Community und hoffe, dieses Projekt fortführen und verbessern zu können. Worum geht es? Es gibt schon einige Anbieter, die ein Arzt-Patienten-Gespräch aufzeichnen, transkribieren und zusammenfassen. Hier einige Anbieter:
+Noa Notes
+Eudaria
+hedihealth
+Via-health
+PlaynVoice (eher diktieren als KI)
+Doq Copilot
+cgmone DokuAssistent
+Jedoch stellt meiner Meinung nach die Cloudanbindung dieser Programme im medizinischen Bereich ein datenschutztechnisches NoGo dar. Meine Idee war es, diesen Prozess lokal laufen zu lassen. Hierfür habe ich auf einem Mac Mini mit M4 Pro Chip mit 14 Core CPU, 20 Core GPU, 16 Core Neutral Engine, 64 GB RAM und 1 TB SSD Ollama laufen. Als LLM nutze ich Mistral 7b, da dies schnell läuft und eine Apache-Lizenz hat. Im Backend läuft dieses Python-Programm. Ich greife im Netzwerk über das Frontend zu. Anfangs hatte ich noch mit einer gesonderten Sprechererkennung, erst mit Pyannote (Audio basiert) und dann über LLM versucht. Letztendlich habe ich es aber in ein Prompt zusammengefasst. Im Admin-Bereich sieht man noch weitere Informationen wie Verarbeitungszeit und Transkript. Auf der Hauptseite habe ich zwischen klassischen Mikroaufnahme und anschließendem Transkript und Livetranskript experimentiert. Bei meinen Versuchen stellt sich jedoch heraus, dass für meinen Anwendungsfall die Transkription bei der klassischen Aufnahme immer noch zu lange dauert. Zu guter Letzt will ich offen zugeben, dass meine Python-Kenntnisse nur marginal sind und ich größtenteils mit Hilfe von ChatGPT mühsam alles erarbeitet habe. Hier noch ein paar Screenshots.
+
+<img width="2032" height="1213" alt="Bildschirmfoto 2025-08-27 um 16 58 39" src="https://github.com/user-attachments/assets/94156680-0c8c-47bd-aba8-820b97eefb50" />
+
+<img width="2040" height="1213" alt="Bildschirmfoto 2025-08-27 um 16 58 56" src="https://github.com/user-attachments/assets/f26f78db-51c5-42ac-93f1-d68a023d108d" />
+
+
+
+
+
+
+
