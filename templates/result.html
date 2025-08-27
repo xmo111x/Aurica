@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Anamnese-Ergebnis</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      background-color: #f5f7fa;
+    }
+
+    .sidebar {
+      width: 220px;
+      background-color: #dfe6ec;
+      padding: 20px;
+      height: 100vh;
+      box-sizing: border-box;
+      overflow-y: auto;
+    }
+
+    .sidebar h3 {
+      margin-top: 0;
+    }
+
+    .sidebar a {
+      display: block;
+      margin: 8px 0;
+      color: #007acc;
+      text-decoration: none;
+    }
+
+    .sidebar a:hover {
+      text-decoration: underline;
+    }
+
+    .main {
+      flex-grow: 1;
+      padding: 40px;
+    }
+
+    h2 {
+      color: #2c3e50;
+    }
+
+    .section {
+      background: #ffffff;
+      border: 1px solid #dbe3ec;
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 18px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    }
+
+    .section h3 {
+      margin: 0 0 8px 0;
+      color: #2c3e50;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 140px;
+      padding: 10px;
+      font-family: monospace;
+      font-size: 14px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      border-radius: 8px;
+      border: 1px solid #cfd8e3;
+      background-color: #fff;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+
+    .btn-row {
+      margin-top: 10px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      padding: 10px 16px;
+      font-size: 14px;
+      border: none;
+      color: white;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .btn-primary {
+      background-color: #28a745;
+    }
+    .btn-primary:hover {
+      background-color: #218838;
+    }
+
+    .btn-secondary {
+      background-color: #007acc;
+    }
+    .btn-secondary:hover {
+      background-color: #005fa3;
+    }
+
+    .btn-outline {
+      background: #ffffff;
+      color: #2c3e50;
+      border: 1px solid #cfd8e3;
+    }
+    .btn-outline:hover {
+      background: #f1f5fb;
+    }
+
+    .info {
+      color: green;
+      margin-top: 10px;
+    }
+
+    .links {
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body style="display: flex;">
+
+  {% include "sidebar.html" %}
+
+  <div class="main" style="margin-left: 220px;">
+    <h2>🩺 Anamnese-Ergebnis</h2>
+
+    <!-- Versteckte Original-Ausgabe (für initiales Parsen) -->
+    <textarea id="rawAnamnese" style="display:none;">{{ anamnese }}</textarea>
+
+    <!-- Unsichtbarer Dialogtext für Mitspeichern -->
+    {% if dialog %}
+      <textarea id="dialogText" style="display:none;">{{ dialog }}</textarea>
+    {% endif %}
+
+    <!-- Abschnitt: Anamnese -->
+    <div class="section">
+      <h3>Anamnese</h3>
+      <textarea id="fldAnamnese" placeholder="Anamnese-Inhalt …"></textarea>
+      <div class="btn-row">
+        <button class="btn-secondary" type="button" onclick="copyField('fldAnamnese')">📋 In Zwischenablage kopieren</button>
+        <button class="btn-outline" type="button" onclick="clearField('fldAnamnese')">🧹 Leeren</button>
+      </div>
+    </div>
+
+    <!-- Abschnitt: Befund -->
+    <div class="section">
+      <h3>Befund</h3>
+      <textarea id="fldBefund" placeholder="Befund-Inhalt …"></textarea>
+      <div class="btn-row">
+        <button class="btn-secondary" type="button" onclick="copyField('fldBefund')">📋 In Zwischenablage kopieren</button>
+        <button class="btn-outline" type="button" onclick="clearField('fldBefund')">🧹 Leeren</button>
+      </div>
+    </div>
+
+    <!-- Abschnitt: Therapie -->
+    <div class="section">
+      <h3>Therapie</h3>
+      <textarea id="fldTherapie" placeholder="Therapie-Inhalt …"></textarea>
+      <div class="btn-row">
+        <button class="btn-secondary" type="button" onclick="copyField('fldTherapie')">📋 In Zwischenablage kopieren</button>
+        <button class="btn-outline" type="button" onclick="clearField('fldTherapie')">🧹 Leeren</button>
+      </div>
+    </div>
+
+    <!-- Globale Aktionen -->
+    <div class="btn-row">
+      <button class="btn-secondary" type="button" onclick="copyAll()">📋 Alles kopieren</button>
+      <button class="btn-primary" type="button" onclick="saveAll()">💾 Speichern</button>
+    </div>
+
+    <!-- Feedback-Nachricht -->
+    <p id="saveInfo" class="info" style="display: none;">✅ Gespeichert</p>
+
+    <!-- Zurücklinks -->
+    <div class="links">
+      <a href="/">⬅ Zurück zur Startseite</a> |
+      <a href="{{ url_for('admin_view', filename=filename) }}">⚙️ Zur Admin-Ansicht</a>
+    </div>
+  </div>
+
+  <script>
+    // --- Parser: vorhandenen Gesamttext (mit Überschriften) in die 3 Felder aufteilen
+    function parseSections(text) {
+      // Robust gegen Groß-/Kleinschreibung und optionale Leerzeichen
+      const pattern = /(?:^|\n)\s*Anamnese\s*:\s*([\s\S]*?)(?=\n\s*Befund\s*:|\n\s*Therapie\s*:|$)|(?:^|\n)\s*Befund\s*:\s*([\s\S]*?)(?=\n\s*Therapie\s*:|$)|(?:^|\n)\s*Therapie\s*:\s*([\s\S]*$)/gi;
+
+      let anam = "", bef = "", ther = "";
+      // Wir scannen abschnittsweise, da der Regex gruppenweise matcht
+      // Alternative Vorgehensweise: gezielt splitten:
+      const norm = (text || "").replace(/\r/g, "");
+      // Greife die drei Abschnitte mit einfachen Splits
+      // 1) Anamnese
+      let aMatch = norm.match(/Anamnese\s*:\s*([\s\S]*?)(?=\n\s*Befund\s*:|\n\s*Therapie\s*:|$)/i);
+      if (aMatch) anam = aMatch[1].trim();
+
+      // 2) Befund
+      let bMatch = norm.match(/Befund\s*:\s*([\s\S]*?)(?=\n\s*Therapie\s*:|$)/i);
+      if (bMatch) bef = bMatch[1].trim();
+
+      // 3) Therapie
+      let tMatch = norm.match(/Therapie\s*:\s*([\s\S]*$)/i);
+      if (tMatch) ther = tMatch[1].trim();
+
+      return { anam, bef, ther };
+    }
+
+    function composeAll(anam, bef, ther) {
+      // Striktes, backend-kompatibles Format
+      const parts = [];
+      parts.push("Anamnese: " + (anam || "—").trim());
+      parts.push("Befund: " + (bef || "—").trim());
+      parts.push("Therapie: " + (ther || "—").trim());
+      return parts.join("\n");
+    }
+
+    function copyField(id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      navigator.clipboard.writeText(el.value || "");
+    }
+
+    function clearField(id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.value = "";
+    }
+
+    function copyAll() {
+      const a = document.getElementById("fldAnamnese").value.trim();
+      const b = document.getElementById("fldBefund").value.trim();
+      const t = document.getElementById("fldTherapie").value.trim();
+      const all = composeAll(a, b, t);
+      navigator.clipboard.writeText(all);
+    }
+
+    function saveAll() {
+      const a = document.getElementById("fldAnamnese").value.trim();
+      const b = document.getElementById("fldBefund").value.trim();
+      const t = document.getElementById("fldTherapie").value.trim();
+      const combined = composeAll(a, b, t);
+
+      const dialogText = document.getElementById("dialogText") ? document.getElementById("dialogText").value.trim() : "";
+      const filename = "{{ filename }}";
+
+      const formData = new FormData();
+      formData.append("anamnese", combined); // Backend erwartet "anamnese": wir liefern die 3 Abschnitte zusammen
+      formData.append("dialog", dialogText);
+      formData.append("filename", filename);
+
+      fetch("/save_anamnese", {
+        method: "POST",
+        body: formData
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.message) {
+          const info = document.getElementById("saveInfo");
+          info.style.display = "block";
+          setTimeout(() => { info.style.display = "none"; }, 3000);
+        } else {
+          alert("❌ Fehler beim Speichern.");
+        }
+      })
+      .catch(err => {
+        console.error("Speicherfehler:", err);
+        alert("❌ Fehler beim Speichern.");
+      });
+    }
+
+    // --- Initial: vorhandenen Text auf Felder verteilen
+    (function init() {
+      const raw = document.getElementById("rawAnamnese")?.value || "";
+      const { anam, bef, ther } = parseSections(raw);
+      document.getElementById("fldAnamnese").value = anam || "";
+      document.getElementById("fldBefund").value   = bef  || "";
+      document.getElementById("fldTherapie").value = ther || "";
+    })();
+  </script>
+</body>
+</html>
+

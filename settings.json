@@ -1,0 +1,5 @@
+{
+  "lmmodel_name": "mistral:latest",
+  "diarization": "off",
+  "summarizer": "local"
+}

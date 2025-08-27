@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Admin – {{ filename }}</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      background-color: #f5f7fa;
+    }
+
+    .sidebar {
+      width: 220px;
+      background-color: #dfe6ec;
+      padding: 20px;
+      height: 100vh;
+      box-sizing: border-box;
+      overflow-y: auto;
+    }
+
+    .sidebar h3 {
+      margin-top: 0;
+    }
+
+    .sidebar a {
+      display: block;
+      margin: 8px 0;
+      color: #007acc;
+      text-decoration: none;
+    }
+
+    .sidebar a:hover {
+      text-decoration: underline;
+    }
+
+    .main {
+      flex-grow: 1;
+      padding: 40px;
+    }
+
+    textarea {
+      width: 100%;
+      height: 350px;
+      font-family: monospace;
+      white-space: pre-wrap;
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      background-color: white;
+      box-sizing: border-box;
+    }
+
+    h2, h3 {
+      color: #2c3e50;
+    }
+
+    .info-box {
+      background-color: #eef3f7;
+      padding: 10px 14px;
+      margin-bottom: 20px;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+
+    .info-box p {
+      margin: 6px 0;
+    }
+
+    code {
+      background: #f0f3f6;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body style="display: flex;">
+
+  {% include "sidebar.html" %}
+
+  <div class="main" style="margin-left: 220px;">
+    <h2>🧠 Admin-Ansicht für: <code>{{ filename }}</code></h2>
+
+    <div class="info-box">
+      <p>📄 Letzte Änderung: {{ metadata.modified }}</p>
+      <p>📦 Dateigröße: {{ metadata.size_kb }} KB</p>
+
+      <!-- Wir legen die Sekunden als data-Attribut ab und zeigen formatiert an -->
+      <p>
+        🎤 Gesprächsdauer:
+        <span id="gespraechsdauer"
+              data-seconds="{{ gesprächsdauer if gesprächsdauer not in [None, '-', ''] else '' }}">
+          {{ gesprächsdauer or "-" }}
+        </span>
+      </p>
+
+      <p>
+        ⚙️ Verarbeitungszeit:
+        <span id="verarbeitungsdauer"
+              data-seconds="{{ verarbeitungsdauer if verarbeitungsdauer not in [None, '-', ''] else '' }}">
+          {{ verarbeitungsdauer or "-" }}
+        </span>
+      </p>
+    </div>
+
+    <h3>🗣️ Sprecherzuordnung / Transkript</h3>
+    <textarea readonly>{{ dialog }}</textarea>
+    
+    <h3>📝 Zusammenfassung (Anamnese)</h3>
+    <textarea>{{ content }}</textarea>
+
+    <a href="/">⬅ Startseite</a>
+  </div>
+
+  <script>
+    function formatSecondsToHMS(sec) {
+      if (isNaN(sec) || sec === null) return "-";
+      sec = Math.max(0, Math.floor(sec));
+
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+
+      const pad = (n) => String(n).padStart(2, "0");
+      if (h > 0) return `${h}:${pad(m)}:${pad(s)}`;
+      return `${m}:${pad(s)}`;
+    }
+
+    function applyFormattedDurations() {
+      const g = document.getElementById('gespraechsdauer');
+      const v = document.getElementById('verarbeitungsdauer');
+
+      // Gesprächsdauer formatieren (Sekunden -> mm:ss / hh:mm:ss)
+      if (g) {
+        const raw = g.getAttribute('data-seconds');
+        const num = raw === null || raw === "" || raw === "-" ? NaN : parseFloat(raw);
+        g.textContent = isNaN(num) ? "-" : formatSecondsToHMS(num);
+      }
+
+      // Verarbeitungsdauer: hier lassen wir Sekunden stehen, aber du könntest auch formatieren
+      if (v) {
+        const raw = v.getAttribute('data-seconds');
+        const num = raw === null || raw === "" || raw === "-" ? NaN : parseFloat(raw);
+        v.textContent = isNaN(num) ? "-" : `${num} s`;
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', applyFormattedDurations);
+
+    // Falls du später via Fetch neue Werte bekommst, kannst du das hiermit updaten:
+    // updateDurations(5.3, 120.4);
+    function updateDurations(processingDuration, gesprächsdauer) {
+      const v = document.getElementById('verarbeitungsdauer');
+      const g = document.getElementById('gespraechsdauer');
+
+      if (typeof processingDuration === 'number') {
+        v.setAttribute('data-seconds', String(processingDuration));
+      }
+      if (typeof gesprächsdauer === 'number') {
+        g.setAttribute('data-seconds', String(gesprächsdauer));
+      }
+      applyFormattedDurations();
+    }
+
+    // Exponiere updateDurations optional global:
+    window.updateDurations = updateDurations;
+  </script>
+</body>
+</html>
+

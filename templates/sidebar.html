@@ -1,0 +1,27 @@
+
+    <div class="sidebar" style="position: fixed; left: 0; top: 0; bottom: 0; width: 220px; height: 100vh; background-color: #dfe6ec; padding: 20px; box-sizing: border-box; overflow-y: auto;">
+      <input type="text" id="searchInput" placeholder="🔍 Suche..." onkeyup="filterList()" style="width: 100%; padding: 5px; margin-bottom: 10px;">
+      <div>
+        {% for group, items in grouped_transkripte.items() %}
+          <strong style="display: block; margin-top: 10px;">{{ group }}</strong>
+          <ul style="list-style: none; padding-left: 10px; margin-top: 5px;">
+            {% for file, label in items %}
+              <li><a href="{{ url_for('load_anamnese', filename=file) }}">{{ label }}</a></li>
+            {% endfor %}
+          </ul>
+        {% endfor %}
+      </div>
+    </div>
+
+    <script>
+    function filterList() {
+      const input = document.getElementById("searchInput").value.toLowerCase();
+      const links = document.querySelectorAll(".sidebar a");
+      links.forEach(link => {
+        const text = link.textContent.toLowerCase();
+        link.parentElement.style.display = text.includes(input) ? "block" : "none";
+      });
+    }
+    </script>
+
+

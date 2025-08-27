@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Anamnese</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      background-color: #f5f7fa;
+    }
+
+    .sidebar {
+      width: 220px;
+      background-color: #dfe6ec;
+      padding: 20px;
+      height: 100vh;
+      box-sizing: border-box;
+      overflow-y: auto;
+    }
+
+    .sidebar h3 {
+      margin-top: 0;
+    }
+
+    .sidebar a {
+      display: block;
+      margin: 8px 0;
+      color: #007acc;
+      text-decoration: none;
+    }
+
+    .sidebar a:hover {
+      text-decoration: underline;
+    }
+
+    .main {
+      flex-grow: 1;
+      padding: 40px;
+    }
+
+    h1 {
+      color: #2c3e50;
+    }
+
+    button {
+      padding: 10px 20px;
+      background-color: #007acc;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-right: 10px;
+      margin-bottom: 20px;
+    }
+
+    button:hover {
+      background-color: #005fa3;
+    }
+
+    input[type="file"] {
+      margin-top: 10px;
+    }
+
+    form {
+      margin-top: 20px;
+    }
+
+    #status {
+      margin-top: 10px;
+      color: #666;
+    }
+
+    /* Live-Transkription */
+    .streaming-section {
+      margin: 35px 0;
+      padding: 20px;
+      background: #e7f0fd;
+      border-radius: 8px;
+      border: 1px solid #b3cee9;
+    }
+
+    .streaming-section button {
+      background: #007acc;
+      color: #fff;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      margin-bottom: 10px;
+      cursor: pointer;
+      font-size: 15px;
+    }
+
+    .streaming-section button:active {
+      background: #005fa3;
+    }
+
+    #liveTranscript {
+      font-family: monospace;
+      font-size: 16px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      overflow-y: auto;
+      height: calc(1.5em * 4 + 24px); /* 4 Zeilen + Padding */
+      background: #fff;
+      border: 1px solid #b3cee9;
+      border-radius: 6px;
+      padding: 12px;
+      position: relative;
+      box-sizing: border-box;
+    }
+
+    #liveTranscript::after {
+      content: '|';
+      animation: blink 1s infinite;
+      margin-left: 4px;
+      opacity: 0.6;
+      position: absolute;
+      bottom: 12px;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 0.6; }
+      50% { opacity: 0; }
+    }
+
+    #liveAnamnese {
+      background: #fff7cc;
+      border: 1px solid #e2c960;
+      padding: 12px;
+      border-radius: 6px;
+      min-height: 80px;
+      margin-top: 12px;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  {% include "sidebar.html" %}
+
+  <div class="main" style="margin-left: 220px;">
+    <button id="toggleLiveBlock" type="button" style="background:#888;float:right;margin-bottom:0;">Live-Transkription ein-/ausblenden</button>
+    <a href="/settings">⚙️ Einstellungen</a>
+    <h1>🩺 Anamnese</h1>
+
+    <!-- Live-Streaming-Transkription -->
+    <div id="liveTranskriptBlock" class="streaming-section" style="display:none;">
+      <h2>🔴 Live-Transkription (Beta)</h2>
+
+      <!-- Mikrofon-Auswahl: LIVE -->
+      <div style="margin-bottom:10px;">
+        <label for="micSelect">🎙️ Mikrofon (Live):</label>
+        <select id="micSelect" style="min-width:280px;"></select>
+      </div>
+
+      <button id="liveRecordBtn">🎙️ Aufnahme starten</button>
+      <button id="liveStopBtn" disabled>⏹️ Aufnahme stoppen</button>
+      <span id="liveStatus" style="margin-left:15px; color: #007acc;"></span>
+      <pre id="liveTranscript">Live-Transkript erscheint hier…</pre>
+
+      <!-- Zusammenfassung (editierbar) -->
+      <div id="liveAnamnese" contenteditable="true">
+        Zusammenfassung erscheint hier…
+      </div>
+
+      <!-- Buttons für Speichern und Kopieren -->
+      <div style="margin-top: 10px;">
+        <button onclick="saveAnamnese()">💾 Speichern</button>
+        <button onclick="copyAnamneseToClipboard()">📋 Kopieren</button>
+      </div>
+    </div>
+
+    <h2>🎤 Mikrofonaufnahme (klassisch)</h2>
+
+    <!-- Mikrofon-Auswahl: KLASSISCH -->
+    <div style="margin-bottom:10px;">
+      <label for="micSelectClassic">🎙️ Mikrofon (Klassisch):</label>
+      <select id="micSelectClassic" style="min-width:280px;"></select>
+    </div>
+
+    <button id="recordBtn">🎙️ Aufnahme starten</button>
+    <button id="stopBtn" disabled>⏹️ Aufnahme stoppen & analysieren</button>
+    <p id="status">Bereit</p>
+
+    <h2>📁 Datei-Upload</h2>
+    <form method="POST" enctype="multipart/form-data">
+      <label for="audiofile">WAV-Datei auswählen:</label>
+      <input type="file" name="audiofile" accept=".wav" required>
+      <button type="submit">🔍 Analysieren</button>
+    </form>
+  </div>
+  <script src="{{ url_for('static', filename='record.js') }}"></script>
+</body>
+</html>

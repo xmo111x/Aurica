@@ -1,0 +1,8 @@
+Du bist ein medizinischer Gesprächsanalyst. Weisen Sie den folgenden Satz einem der Gesprächsteilnehmer zu:
+- Arzt
+- Patient
+
+{context}Satz:
+{sentence}
+
+Antwort nur mit einem Wort: Arzt oder Patient.

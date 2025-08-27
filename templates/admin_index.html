@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head><title>Admin-Übersicht</title></head>
+<body>
+  <h2>🧠 Admin-Bereich</h2>
+  <p>Wähle eine Anamnese-Datei:</p>
+  <ul>
+    {% for file in transkripte %}
+      {% if file.endswith("_anamnese.txt") %}
+        <li><a href="{{ url_for('admin_view', filename=file) }}">{{ file }}</a></li>
+      {% endif %}
+    {% endfor %}
+  </ul>
+  <p><a href="/">⬅ Zurück zur Startseite</a></p>
+</body>
+</html>
+
