@@ -141,12 +141,84 @@
   {% include "sidebar.html" %}
 
   <div class="main" style="margin-left: 220px;">
-    <button id="toggleLiveBlock" type="button" style="background:#888;float:right;margin-bottom:0;">Live-Transkription ein-/ausblenden</button>
     <a href="/settings">⚙️ Einstellungen</a>
     <h1>🩺 Anamnese</h1>
 
-    <!-- Live-Streaming-Transkription -->
-    <div id="liveTranskriptBlock" class="streaming-section" style="display:none;">
+  <div id="quickModelPicker" style="margin:8px 0 16px 0; padding:8px; border:1px dashed #cbd5e1; border-radius:8px; background:#f8fafc;">
+    <label for="ggmlModelSelect">Modell:</label>
+    <select id="ggmlModelSelect" style="min-width:280px;"></select>
+    <button type="button" id="saveModelBtn">Setzen</button>
+    <small id="coremlHint" style="margin-left:8px; color:#666;"></small>
+    <small id="modelStatus" style="margin-left:8px; color:#007acc;"></small>
+  </div>
+
+  <script>
+(async function() {
+    async function refreshModels() {
+      const sel = document.getElementById('ggmlModelSelect');
+      const hint = document.getElementById('coremlHint');
+      const status = document.getElementById('modelStatus');
+      sel.innerHTML = '<option>⏳ Lädt…</option>';
+      hint.textContent = '';
+      status.textContent = '';
+
+      let data;
+      try {
+        const res = await fetch('/models');
+        data = await res.json();
+      } catch (e) {
+        sel.innerHTML = '<option>Fehler beim Laden</option>';
+        status.textContent = '❌ /models nicht erreichbar';
+        return;
+      }
+      sel.innerHTML = '';
+      let current = data.current || '';
+      (data.models || []).forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.path;
+        opt.textContent = m.name + (m.has_coreml ? '  (CoreML ✓)' : '');
+        if (m.path === current) opt.selected = true;
+        sel.appendChild(opt);
+      });
+
+      if (!sel.value && data.models && data.models.length) {
+        sel.value = data.models[0].path;
+      }
+      // CoreML-Hinweis
+      const chosen = (data.models || []).find(x => x.path === sel.value);
+      hint.textContent = chosen && chosen.has_coreml ? 'CoreML-Encoder vorhanden' : 'kein CoreML-Encoder gefunden';
+    }
+
+    document.getElementById('ggmlModelSelect')?.addEventListener('change', (e) => {
+      const opt = e.target.selectedOptions[0];
+      const text = opt?.textContent || '';
+      const hasCoreML = /CoreML ✓/.test(text);
+      document.getElementById('coremlHint').textContent = hasCoreML ? 'CoreML-Encoder vorhanden' : 'kein CoreML-Encoder gefunden';
+    });
+
+    document.getElementById('saveModelBtn')?.addEventListener('click', async () => {
+      const sel = document.getElementById('ggmlModelSelect');
+      const status = document.getElementById('modelStatus');
+      status.textContent = '⏳ Speichere…';
+      try {
+        const fd = new FormData();
+        fd.append('model_path', sel.value);
+        const res = await fetch('/set_model', { method: 'POST', body: fd });
+        const j = await res.json();
+        if (j.ok) status.textContent = '✅ Modell gesetzt';
+        else status.textContent = '❌ ' + (j.error || 'Unbekannter Fehler');
+      } catch (e) {
+        status.textContent = '❌ Speichern fehlgeschlagen';
+      }
+    });
+
+    await refreshModels();
+  })();
+</script>
+  
+
+    <!-- Live-Streaming-Transkription (Classic entfernt) -->
+    <div id="liveTranskriptBlock" class="streaming-section" style="">
       <h2>🔴 Live-Transkription (Beta)</h2>
 
       <!-- Mikrofon-Auswahl: LIVE -->
@@ -176,21 +248,15 @@
 
     <!-- Mikrofon-Auswahl: KLASSISCH -->
     <div style="margin-bottom:10px;">
-      <label for="micSelectClassic">🎙️ Mikrofon (Klassisch):</label>
-      <select id="micSelectClassic" style="min-width:280px;"></select>
-    </div>
-
-    <button id="recordBtn">🎙️ Aufnahme starten</button>
-    <button id="stopBtn" disabled>⏹️ Aufnahme stoppen & analysieren</button>
-    <p id="status">Bereit</p>
-
     <h2>📁 Datei-Upload</h2>
     <form method="POST" enctype="multipart/form-data">
-      <label for="audiofile">WAV-Datei auswählen:</label>
-      <input type="file" name="audiofile" accept=".wav" required>
+      <label for="audiofile">WAV/MP3-Datei auswählen:</label>
+      <input type="file" id="audiofile" name="audiofile" accept=".wav,.mp3" required>
       <button type="submit">🔍 Analysieren</button>
     </form>
+    
+
   </div>
-  <script src="{{ url_for('static', filename='record.js') }}"></script>
+<script src="{{ url_for('static', filename='record.js') }}"></script>
 </body>
 </html>

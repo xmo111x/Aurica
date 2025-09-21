@@ -1,5 +1,6 @@
 {
-  "lmmodel_name": "mistral:latest",
+  "lmmodel_name": "mistral-nemo:latest",
   "diarization": "off",
-  "summarizer": "local"
+  "summarizer": "local",
+  "whisper_model_path": "/Users/Mesut/whisper_project/web_app/whisper.cpp/models/ggml-medium.bin"
 }

@@ -12,9 +12,116 @@ import shutil
 import time
 
 from datetime import datetime
-from utils import transcribe_with_whispercpp, assign_speakers_llm, summarize_with_lmstudio, get_gespraechsdauer_from_vtt
+from utils import transcribe_with_whispercpp, assign_speakers_llm, summarize_with_lmstudio, get_gespraechsdauer_from_vtt, MODEL_PATH
 
 app = Flask(__name__)
+
+def preprocess_audio_chunk_soft(input_path: str, output_path: str, timeout: int = 20) -> str:
+    """
+    Schonende Normalisierung für *Live-Chunks*:
+    - KEIN silenceremove!
+    - Nur HP/LP + milde Kompression
+    - 16 kHz, Mono, PCM16
+    """
+    filt = "highpass=f=70,lowpass=f=12000,acompressor=threshold=-18dB:ratio=2.0:attack=5:release=120:makeup=3"
+    cmd = [
+        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+        "-i", input_path,
+        "-af", filt,
+        "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",
+        output_path
+    ]
+    proc = subprocess.run(cmd, capture_output=True, timeout=timeout)
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.decode(errors="ignore") or "ffmpeg failed")
+    return output_path
+
+# ==== Whisper model selection helpers ====
+WHISPER_MODELS_DIR = os.getenv("WHISPER_MODELS_DIR") or os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "whisper.cpp", "models"))
+SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
+
+def _load_settings():
+    try:
+        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def _save_settings(d):
+    try:
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print("⚠️ settings.json write failed:", e)
+
+def get_current_whisper_model_path():
+    # priority: session -> settings.json -> utils default
+    p = session.get("whisper_model_path")
+    if p and os.path.exists(p):
+        return p
+    cfg = _load_settings()
+    p = cfg.get("whisper_model_path")
+    if p and os.path.exists(p):
+        return p
+    return MODEL_PATH  # from utils.py
+
+def list_available_models():
+    import re
+    def encoder_candidates(dirpath, base_name):
+        # remove quant suffixes like -q5_0 / -q8_0 / -Q5_K_M at the end
+        b = base_name
+        b = re.sub(r'-(?:q\d+(?:_\d+)?|Q\d+(?:_[A-Za-z0-9]+)*)$', '', b)
+        # map large-v3-turbo -> large-v3
+        b = b.replace('large-v3-turbo', 'large-v3')
+        cand = [os.path.join(dirpath, f"{b}-encoder.mlmodelc")]
+        return cand
+
+    models = []
+    search_dirs = []
+    if os.path.isdir(WHISPER_MODELS_DIR):
+        search_dirs.append(WHISPER_MODELS_DIR)
+    try:
+        d = os.path.dirname(MODEL_PATH)
+        if os.path.isdir(d) and d not in search_dirs:
+            search_dirs.append(d)
+    except Exception:
+        pass
+
+    exts = (".bin", ".gguf")
+    seen = set()
+    for d in search_dirs:
+        try:
+            for name in sorted(os.listdir(d)):
+                if not name.startswith("ggml-"):
+                    continue
+                if not name.endswith(exts):
+                    continue
+                full = os.path.join(d, name)
+                base = os.path.splitext(name)[0]  # ggml-medium-q8_0
+                if full in seen:
+                    continue
+                seen.add(full)
+                # exact encoder
+                exact_enc = os.path.join(d, f"{base}-encoder.mlmodelc")
+                has_coreml = os.path.isdir(exact_enc)
+                enc_used = exact_enc if has_coreml else None
+                # family-mapped encoder (e.g., ggml-medium-encoder.mlmodelc)
+                if not has_coreml:
+                    for cand in encoder_candidates(d, base):
+                        if os.path.isdir(cand):
+                            has_coreml = True
+                            enc_used = cand
+                            break
+                models.append({
+                    "name": name,
+                    "path": full,
+                    "dir": d,
+                    "has_coreml": bool(has_coreml),
+                    "encoder_path": enc_used,
+                })
+        except Exception as e:
+            print("list_available_models error:", e)
+    return models
 app.secret_key = "dein-geheimer-key"
 
 DEFAULT_LMMODEL_NAME = 'mistral'
@@ -31,6 +138,8 @@ SESSION_CHUNK_WAVS = defaultdict(list) # session_id -> Liste der absoluten Chunk
 # Limits & Timeouts
 FFMPEG_TIMEOUT = 15         # Sekunden pro ffmpeg-Aufruf
 MAX_SESSION_TEXT = 20000    # Zeichen (UI bremst sonst aus)
+OVERLAP_TRIM_MS = int(os.getenv("OVERLAP_TRIM_MS", "700"))
+
 
 os.makedirs(TRANSKRIPT_DIR, exist_ok=True)
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -231,6 +340,61 @@ def _prefer_full_text(final_txt: str, live_txt: str) -> str:
         return f
     return l
     
+def dedupe_sentences(text: str) -> str:
+    """
+    Entfernt direkt aufeinanderfolgende Dopplungen/Varianten auf Satzebene.
+    Sehr defensiv, damit nichts Gutes verloren geht.
+    """
+    import re
+    from difflib import SequenceMatcher
+
+    s = (text or "").strip()
+    if not s:
+        return s
+    # Sätze naiv splitten (nach ., !, ?)
+    sents = re.split(r'(?<=[\.\!\?])\s+', s)
+    out = []
+    last_norm = None
+
+    for sent in sents:
+        t = sent.strip()
+        if not t:
+            continue
+        norm = re.sub(r'[\s,.;:]+', ' ', t).strip().lower()
+        # mit letztem Satz vergleichen
+        if last_norm:
+            sim = SequenceMatcher(None, norm, last_norm).ratio()
+            if norm == last_norm or sim > 0.92:
+                continue
+        out.append(t)
+        last_norm = norm
+
+    return "\n".join(out)
+
+def merge_with_overlap(prev: str, new: str, lookback: int = 400, min_overlap: int = 16) -> str:
+    """
+    Führt prev + new zusammen, indem es den besten Suffix/Prefix-Overlap (bis lookback Zeichen)
+    sucht und doppelte Passagen vermeidet. Gut für Live-Text mit Audio-Overlap.
+    """
+    prev = prev or ""
+    new  = (new or "").strip()
+    if not new:
+        return prev
+
+    import difflib
+    tail = prev[-lookback:] if prev else ""
+    if tail.endswith(new):
+        return prev
+
+    sm = difflib.SequenceMatcher(a=tail, b=new, autojunk=False)
+    match = sm.find_longest_match(0, len(tail), 0, len(new))
+    if match.size >= min_overlap:
+        add = new[match.b + match.size:]
+        return (prev + add).strip()
+
+    sep = "" if (not prev or prev.endswith((" ", "\n"))) else " "
+    return (prev + sep + new).strip()
+
 @app.route('/start_stream')
 def start_stream():
     # (7) Robuste Session-Initialisierung / Reset
@@ -261,16 +425,26 @@ def stream_chunk():
         SESSION_CHUNK_IDX[session_id] += 1
         idx = SESSION_CHUNK_IDX[session_id]
 
-        # 1) Chunk speichern (Input-Container)
-        tmp_in = os.path.abspath(os.path.join(UPLOAD_FOLDER, f"{session_id}_{idx}.{ext}"))
+        # 1) Chunk speichern (immer als "raw", damit Input != Output ist – auch bei WAV)
+        in_name = f"{session_id}_{idx}.raw.{ext}"           # <<— immer anderer Dateiname als Ziel
+        tmp_in  = os.path.abspath(os.path.join(UPLOAD_FOLDER, in_name))
         with open(tmp_in, 'wb') as f:
             f.write(blob.read())
 
-        # 2) Chunk -> WAV (16k, mono)  (3) Timeout & leises ffmpeg
+        # 2) Normalize -> WAV (16 kHz, Mono, PCM16)
         tmp_wav = os.path.abspath(os.path.join(UPLOAD_FOLDER, f"{session_id}_{idx}.wav"))
-        ffmpeg_cmd = f'ffmpeg -y -hide_banner -loglevel error -i {shlex.quote(tmp_in)} -ar 16000 -ac 1 {shlex.quote(tmp_wav)}'
+        ffmpeg_cmd = (
+            f'ffmpeg -y -hide_banner -loglevel error '
+            f'-i {shlex.quote(tmp_in)} '
+            f'-ac 1 -ar 16000 -c:a pcm_s16le '
+            f'{shlex.quote(tmp_wav)}'
+        )
         try:
-            proc = subprocess.run(ffmpeg_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=FFMPEG_TIMEOUT)
+            proc = subprocess.run(
+                ffmpeg_cmd, shell=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                timeout=FFMPEG_TIMEOUT
+            )
         except subprocess.TimeoutExpired:
             print(f"⚠️ ffmpeg Timeout bei Chunk {idx}")
             current_total = SESSION_TEXT.get(session_id, "")
@@ -282,39 +456,41 @@ def stream_chunk():
             current_total = SESSION_TEXT.get(session_id, "")
             return jsonify({'partial_transcript': current_total, 'seq': idx, 'warning': 'ffmpeg_failed'})
 
-        SESSION_CHUNK_WAVS[session_id].append(tmp_wav)
+        # Roh-Upload weg
+        try: os.remove(tmp_in)
+        except Exception: pass
 
-
-    # NEU: Preprocess dieses Chunk-WAV
+        # >>> NEU: Soft-Preprocessing *vor* dem Append und genau *das* in die Liste
         clean_wav = tmp_wav.replace(".wav", "_clean.wav")
         try:
-            preprocess_audio(tmp_wav, clean_wav, timeout=FFMPEG_TIMEOUT + 10)
+            preprocess_audio_chunk_soft(tmp_wav, clean_wav, timeout=FFMPEG_TIMEOUT)
             use_wav = clean_wav
+            # Optional: raw tmp_wav entsorgen, spart Platz
+            try: os.remove(tmp_wav)
+            except Exception: pass
         except Exception as e:
             print(f"⚠️ Preprocess failed for chunk {idx}: {e}")
-            use_wav = tmp_wav  # Fallback: trotzdem transkribieren
+            use_wav = tmp_wav  # Fallback
 
-    # 3) Dieses (gefilterte) WAV transkribieren
+        # WICHTIG: jetzt das *verwendete* WAV merken
+        SESSION_CHUNK_WAVS[session_id].append(use_wav)
+
+        # 3) Chunk transkribieren (auf use_wav)
         try:
-            chunk_text, _, _ = transcribe_with_whispercpp(use_wav, write_outputs=False)
+            chunk_text, _, _ = transcribe_with_whispercpp(use_wav, model_path=get_current_whisper_model_path(), write_outputs=False)
         except TypeError:
-            chunk_text, _, _ = transcribe_with_whispercpp(use_wav)
+            chunk_text, _, _ = transcribe_with_whispercpp(use_wav, model_path=get_current_whisper_model_path())
         chunk_text = (chunk_text or "").strip()
 
-        # 4) Kumulativ speichern & begrenzen
+        # 4) Live-Text per Overlap mergen
         prev = SESSION_TEXT.get(session_id, "")
-        new_total = (prev + (" " if prev and chunk_text else "") + chunk_text).strip()
+        new_total = merge_with_overlap(prev, chunk_text, lookback=400, min_overlap=16)
         if len(new_total) > MAX_SESSION_TEXT:
             new_total = new_total[-MAX_SESSION_TEXT:]
         SESSION_TEXT[session_id] = new_total
 
-        # 5) Cleanup input-chunk (Container-Datei)
-        try:
-            os.remove(tmp_in)
-        except Exception:
-            pass
-
         return jsonify({'partial_transcript': new_total, 'seq': idx})
+
 
     except Exception as e:
         print("❌ stream_chunk exception:", str(e))
@@ -335,33 +511,37 @@ def index():
 
     if request.method == 'POST':
         file = request.files.get('audiofile')
-        if file and (file.filename.endswith('.mp3') or file.filename.endswith('.wav')):
-            filename = f"{basename}.wav"
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(filepath)
-            clean_path = filepath.replace(".wav", "_clean.wav")
-            try:
-                preprocess_audio(filepath, clean_path, timeout=FFMPEG_TIMEOUT + 10)
-                wav_for_asr = clean_path
-            except Exception as e:
-                print("⚠️ Preprocess failed (index upload), fallback:", e)
-                wav_for_asr = filepath
+        if file and file.filename:
+            # 1) Upload mit Original-Endung speichern (mp3/wav/m4a/ogg/webm)
+            orig_ext = os.path.splitext(file.filename)[1].lower()
+            allowed = {'.wav', '.mp3', '.m4a', '.ogg', '.webm'}
+            if orig_ext not in allowed:
+                flash(f"Nicht unterstütztes Format: {orig_ext}", "error")
+                return render_template("index.html", grouped_transkripte=group_transkripte_by_date())
 
-            # Transkription auf wav_for_asr
+            upload_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{basename}{orig_ext}")
+            file.save(upload_path)
+
+            # 2) Schonende Normalisierung nach 16 kHz/Mono/PCM16 (ohne silenceremove)
+            clean_wav = os.path.join(app.config['UPLOAD_FOLDER'], f"{basename}.wav")
+            try:
+                preprocess_audio_chunk_soft(upload_path, clean_wav, timeout=FFMPEG_TIMEOUT)
+                wav_for_asr = clean_wav
+            except Exception as e:
+                print("⚠️ Soft-Preprocess fehlgeschlagen, nutze Upload direkt:", e)
+                wav_for_asr = upload_path
+
+            # 3) Transkription – **nur einmal**, auf der bereinigten Datei
+            start_processing = datetime.now()
             transcript, _, blocks = transcribe_with_whispercpp(
                 wav_for_asr,
+                model_path=get_current_whisper_model_path(),
                 write_outputs=True,
                 output_dir=TRANSKRIPT_DIR,
-                output_basename=basename
+                output_basename=basename  # erzeugt z.B. transkripte/<basename>.wav.vtt
             )
-            start_processing = datetime.now()
 
-            transcript, _, blocks = transcribe_with_whispercpp(
-                filepath,
-                write_outputs=True,
-                output_dir=TRANSKRIPT_DIR,
-                output_basename=basename  # -> erzeugt transkripte/<basename>.wav.vtt
-            )
+            # 4) Sprecher-Zuweisung / Dialog
             diarization = session.get("diarization", "llm")
             if diarization == "off":
                 dialog = "\n".join([b["text"] for b in blocks])
@@ -370,132 +550,44 @@ def index():
             else:
                 dialog = "\n".join([f"Unbekannt: {b.get('text', '')}" for b in blocks])
 
+            # 5) Zusammenfassung
             if dialog.strip():
                 anamnese = summarize_with_lmstudio(dialog, geschlecht, lmmodel_name)
             else:
                 anamnese = "⚠️ Keine Sprachaufnahme erkannt – keine Zusammenfassung möglich."
 
-
+            # 6) Speichern
+            os.makedirs(TRANSKRIPT_DIR, exist_ok=True)
             with open(os.path.join(TRANSKRIPT_DIR, f"{basename}_anamnese.txt"), 'w', encoding='utf-8') as f:
                 f.write(anamnese)
             with open(os.path.join(TRANSKRIPT_DIR, f"{basename}_transkript.txt"), 'w', encoding='utf-8') as f:
                 f.write(dialog)
 
+            # 7) GDT & Meta
             if os.path.exists(gdt_path):
                 os.remove(gdt_path)
-
             processing_duration = round((datetime.now() - start_processing).total_seconds(), 1)
-
             meta_path = os.path.join(TRANSKRIPT_DIR, f"{basename}.meta.json")
-            with open(meta_path, 'w') as f:
+            with open(meta_path, 'w', encoding='utf-8') as f:
                 json.dump({"verarbeitungsdauer": processing_duration}, f)
 
-            return render_template("result.html", dialog=dialog, anamnese=anamnese, filename=f"{basename}_anamnese.txt", grouped_transkripte=group_transkripte_by_date())
+            return render_template(
+                "result.html",
+                dialog=dialog,
+                anamnese=anamnese,
+                filename=f"{basename}_anamnese.txt",
+                grouped_transkripte=group_transkripte_by_date()
+            )
 
+    # GET
     return render_template("index.html", grouped_transkripte=group_transkripte_by_date())
 
-@app.route('/upload_audio', methods=['POST'])
+
+@app.route("/upload_audio", methods=["POST"])
 def upload_audio():
-    lmmodel_name = session.get('lmmodel_name') or DEFAULT_LMMODEL_NAME
-    audio_file = request.files.get('audio')
-    audio_file.seek(0)
-    if not audio_file:
-        return "❌ Keine Datei empfangen", 400
+    from flask import abort
+    return abort(404)
 
-    ext = os.path.splitext(audio_file.filename)[1].lower()
-    if ext not in ['.webm', '.ogg', '.wav', '.m4a', '.mp4']:
-        return "❌ Nur WAV, WEBM oder OGG-Dateien erlaubt", 400
-
-    gdt_path = "GDT/AuriT2MD.gdt"
-    initialen, patientennr, geschlecht = extract_patient_data_from_gdt(gdt_path)
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    basename = f"{initialen}_{patientennr}_{timestamp}"
-
-    temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{basename}{ext}")
-    audio_file.save(temp_path)
-
-    ### NEU: Robust konvertieren in sauberes WAV (immer benutzen!)
-    base, _ = os.path.splitext(temp_path)
-    fixed_path = base + "_fixed.mka"
-    wav_path   = base + "_16k.wav"
-
-    # Schritt 1: Remux / PTS neu generieren
-    cmd1 = [
-        "ffmpeg", "-y",
-        "-fflags", "+genpts",
-        "-use_wallclock_as_timestamps", "1",
-        "-i", temp_path,
-        "-c:a", "copy",
-        "-map", "0:a:0",
-        "-vn",
-        fixed_path
-    ]
-    subprocess.run(cmd1, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
-
-    # Schritt 2: sauberes 16kHz/Mono/PCM erzeugen
-    cmd2 = [
-        "ffmpeg", "-y",
-        "-fflags", "+genpts",
-        "-i", fixed_path,
-        "-ac", "1",
-        "-ar", "16000",
-        "-c:a", "pcm_s16le",
-        "-vn",
-        wav_path
-    ]
-    subprocess.run(cmd2, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
-
-    ### Ab hier nur noch wav_path verwenden
-    start_processing = datetime.now()
-
-    transcript, _, blocks = transcribe_with_whispercpp(
-        wav_path,
-        write_outputs=True,
-        output_dir=TRANSKRIPT_DIR,
-        output_basename=basename
-    )
-
-    start_processing = datetime.now()
-
-    transcript, _, blocks = transcribe_with_whispercpp(
-        wav_path,
-        write_outputs=True,
-        output_dir=TRANSKRIPT_DIR,
-        output_basename=basename  # -> erzeugt transkripte/<basename>.wav.vtt
-    )
-    diarization = session.get("diarization", "llm")
-    if diarization == "off":
-        dialog = "\n".join([b["text"] for b in blocks])
-    elif diarization == "llm":
-        dialog = "\n".join(assign_speakers_llm(blocks, lmmodel_name))
-    else:
-        dialog = "\n".join([f"Unbekannt: {b.get('text', '')}" for b in blocks])
-
-    if dialog.strip():
-        anamnese = summarize_with_lmstudio(dialog, geschlecht, lmmodel_name)
-    else:
-        anamnese = "⚠️ Keine Sprachaufnahme erkannt – keine Zusammenfassung möglich."
-
-
-    with open(os.path.join(TRANSKRIPT_DIR, f"{basename}_anamnese.txt"), 'w', encoding='utf-8') as f:
-        f.write(anamnese)
-    with open(os.path.join(TRANSKRIPT_DIR, f"{basename}_transkript.txt"), 'w', encoding='utf-8') as f:
-        f.write(dialog)
-
-    processing_duration = round((datetime.now() - start_processing).total_seconds(), 1)
-    meta_path = os.path.join(TRANSKRIPT_DIR, f"{basename}.meta.json")
-    with open(meta_path, 'w') as f:
-        json.dump({"verarbeitungsdauer": processing_duration}, f)
-
-    try:
-        os.remove(temp_path)
-    except Exception:
-        pass
-
-    if os.path.exists(gdt_path):
-        os.remove(gdt_path)
-
-    return render_template("result.html", dialog="", anamnese=anamnese, filename=f"{basename}_anamnese.txt", grouped_transkripte=group_transkripte_by_date(), verarbeitungsdauer=processing_duration)
 
 @app.route('/transkript/<filename>')
 def load_anamnese(filename):
@@ -759,10 +851,38 @@ def process_stream():
             return jsonify({"error": "Keine Audio-Chunks gefunden"}), 404
         chunk_wavs = [legacy_wav]
 
+    # NEU: Overlap der Audio-Chunks entfernen (alles außer dem ersten um OVERLAP_TRIM_MS kürzen)
+    trimmed_chunks = []
+    temp_trims = []
+    if OVERLAP_TRIM_MS > 0 and len(chunk_wavs) > 1:
+        tsec = OVERLAP_TRIM_MS / 1000.0
+        for i, p in enumerate(chunk_wavs):
+            if i == 0:
+                trimmed_chunks.append(p)
+                continue
+            p_trim = os.path.abspath(p.replace(".wav", "_trim.wav"))
+            cmd = [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-i", p,
+                "-af", f"atrim=start={tsec:.3f},asetpts=PTS-STARTPTS",
+                "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",
+                p_trim
+            ]
+            proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if proc.returncode == 0 and os.path.exists(p_trim) and os.path.getsize(p_trim) > 0:
+                trimmed_chunks.append(p_trim)
+                temp_trims.append(p_trim)
+            else:
+                # Fallback: ungeschnitten übernehmen
+                trimmed_chunks.append(p)
+    else:
+        trimmed_chunks = list(chunk_wavs)
+
     concat_list_path = os.path.abspath(os.path.join(UPLOAD_FOLDER, f"{session_id}_concat_list.txt"))
     with open(concat_list_path, 'w', encoding='utf-8') as f:
-        for p in chunk_wavs:
+        for p in trimmed_chunks:
             f.write(f"file '{os.path.abspath(p)}'\n")
+
 
     concat_out = os.path.abspath(os.path.join(UPLOAD_FOLDER, f"{session_id}_concat.wav"))
     proc1 = subprocess.run(
@@ -785,19 +905,30 @@ def process_stream():
     # NEU: Gesamtdatei vorverarbeiten
     final_wav_clean = final_wav.replace(".wav", "_clean.wav")
     try:
-        preprocess_audio(final_wav, final_wav_clean, timeout=FFMPEG_TIMEOUT + 10)
+        preprocess_audio_chunk_soft(final_wav, final_wav_clean, timeout=FFMPEG_TIMEOUT)
         wav_for_asr = final_wav_clean
     except Exception as e:
-        print("⚠️ Preprocess failed (final wav), fallback:", e)
+        print("⚠️ Preprocess (soft) failed, fallback:", e)
         wav_for_asr = final_wav
 
-    # === Finale Transkription auf (ggf. gereinigter) Datei
+
+    # === Finale Transkription (hast du schon) ===
     transcript, _, blocks = transcribe_with_whispercpp(
-        wav_for_asr,
-        write_outputs=True,
-        output_dir=TRANSKRIPT_DIR,
-        output_basename=session_id
+        wav_for_asr, model_path=get_current_whisper_model_path(),
+        write_outputs=True, output_dir=TRANSKRIPT_DIR, output_basename=session_id
     )
+
+    # Finaltext bilden
+    final_txt = (transcript or "").strip()
+    if not final_txt and blocks:
+        final_txt = "\n".join([b.get("text","") for b in blocks]).strip()
+
+    # NEU: Nur finalen Text verwenden – dedupliziert
+    dialog = dedupe_sentences(final_txt)
+
+    # Fallback: falls final wider Erwarten leer/zu kurz ist
+    if len(dialog) < 20 and live_text:
+        dialog = dedupe_sentences(live_text)
 
 
     # VTT suchen (mit Polling), dann auf <basename>.wav.vtt umbenennen
@@ -835,8 +966,14 @@ def process_stream():
         dst_vtt = None
 
     # Dialog aus Blocks (Fallback: gesamter Text) + Plausibilitäts-Check ggü. Live-Text
-    raw_dialog = "\n".join([b["text"] for b in blocks]) if blocks else (live_text or transcript or "")
-    dialog = _prefer_full_text(raw_dialog, live_text)
+    final_txt = (transcript or "").strip()
+    if not final_txt and blocks:
+        final_txt = "\n".join([b.get("text","") for b in blocks]).strip()
+
+    # Live + Final per Overlap zusammenführen
+    dialog = merge_with_overlap(live_text, final_txt, lookback=800, min_overlap=10)
+    if not dialog.strip():  # Fallback, falls etwas schiefgeht
+        dialog = final_txt or live_text
 
 
     # Zusammenfassung
@@ -869,8 +1006,13 @@ def process_stream():
         for p in chunk_wavs:
             try: os.remove(p)
             except Exception: pass
+    # NEU:
+        for p in temp_trims:
+            try: os.remove(p)
+            except Exception: pass
     except Exception as e:
         print("⚠️ Cleanup Warnung:", e)
+
 
     SESSION_CHUNK_WAVS.pop(session_id, None)
     SESSION_CHUNK_IDX.pop(session_id, None)
@@ -895,6 +1037,61 @@ def sidebar_reload():
     return render_template("sidebar.html", grouped_transkripte=group_transkripte_by_date())
 
 # Starten
+
+
+@app.route("/models")
+def list_models_route():
+    return jsonify({"models": list_available_models(), "current": get_current_whisper_model_path()})
+
+
+@app.route("/set_model", methods=["POST"])
+def set_model_route():
+    # akzeptiere FormData, x-www-form-urlencoded oder JSON
+    model_path = None
+    try:
+        if request.form:
+            model_path = request.form.get("model_path") or model_path
+        if not model_path and request.values:
+            model_path = request.values.get("model_path")
+        if not model_path:
+            data = request.get_json(silent=True) or {}
+            model_path = data.get("model_path")
+        if not model_path:
+            raw = (request.data or b"").decode("utf-8", errors="ignore").strip()
+            if raw and (raw.endswith(".bin") or raw.endswith(".gguf")):
+                model_path = raw
+    except Exception:
+        model_path = None
+
+    if not model_path:
+        return jsonify({"error": "model_path missing", "debug": {
+            "content_type": request.content_type,
+            "form_keys": list(request.form.keys()),
+        }}), 400
+
+    model_path = os.path.abspath(os.path.expanduser(model_path))
+    if not os.path.exists(model_path):
+        return jsonify({"error": f"model_path not found: {model_path}"}), 400
+
+    session["whisper_model_path"] = model_path
+    cfg = _load_settings()
+    cfg["whisper_model_path"] = model_path
+    _save_settings(cfg)
+    return jsonify({"ok": True, "model_path": model_path})
+
+    model_path = request.form.get("model_path") or request.json.get("model_path") if request.is_json else None
+    if not model_path:
+        return jsonify({"error": "model_path missing"}), 400
+    if not os.path.exists(model_path):
+        return jsonify({"error": f"model_path not found: {model_path}"}), 400
+
+    # persist to session + settings.json
+    session["whisper_model_path"] = model_path
+    cfg = _load_settings()
+    cfg["whisper_model_path"] = model_path
+    _save_settings(cfg)
+    return jsonify({"ok": True, "model_path": model_path})
+
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=5001, ssl_context=('cert.pem', 'key.pem'))
 

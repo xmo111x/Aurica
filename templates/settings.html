@@ -77,7 +77,19 @@
       {% else %}
         <!-- Fallback: wenn Server keine Liste liefert, zeige deine bisherigen Optionen -->
         <select name="lmmodel_name" id="lmmodel_name">
+            <option value="mistral-small3.2:24b" {% if lmmodel_name == 'mistral-small3.2:24b' %}selected{% endif %}>mistral-small3.2:24b</option>
             <option value="mistral" {% if lmmodel_name == 'mistral' %}selected{% endif %}>mistral</option>
+            <option value="llama3.1:8b" {% if lmmodel_name == 'llama3.1:8b' %}selected{% endif %}>llama3.1:8b</option>
+            <option value="llama3.3:70b" {% if lmmodel_name == 'llama3.3:70b' %}selected{% endif %}>llama3.3:70b</option>
+            <option value="OussamaELALLAM/MedExpert" {% if lmmodel_name == 'OussamaELALLAM/MedExpert' %}selected{% endif %}>OussamaELALLAM/MedExpert</option>
+            <option value="deepseek-r1:8b" {% if lmmodel_name == 'deepseek-r1:8b' %}selected{% endif %}>deepseek-r1:8b</option>
+            <option value="deepseek-r1:32b" {% if lmmodel_name == 'deepseek-r1:32b' %}selected{% endif %}>deepseek-r1:32b</option>
+            <option value="gemma3:1b" {% if lmmodel_name == 'gemma3:1b' %}selected{% endif %}>gemma3:1b</option>
+            <option value="gemma3:12b" {% if lmmodel_name == 'gemma3:12b' %}selected{% endif %}>gemma3:12b</option>
+            <option value="qwen3:4b" {% if lmmodel_name == 'qwen3:4b' %}selected{% endif %}>qwen3:4b</option>
+            <option value="qwen3:8b" {% if lmmodel_name == 'qwen3:8b' %}selected{% endif %}>qwen3:8b</option>
+            <option value="qwen3:30b" {% if lmmodel_name == 'qwen3:30b' %}selected{% endif %}>qwen3:30b</option>
+            <option value="gpt-oss:20b" {% if lmmodel_name == 'gpt-oss:20b' %}selected{% endif %}>gpt-oss:20b</option>
         </select>
         <small style="color:#b00;">Konnte Modellliste nicht abrufen – prüfe, ob dein LLM-Server läuft.</small>
       {% endif %}
@@ -105,6 +117,84 @@
 
     <button type="submit">💾 Einstellungen speichern</button>
   </form>
+  <h2>🧩 Whisper-Modell (ggml)</h2>
+  <div id="modelPicker" style="padding:10px;border:1px solid #d0d7de;border-radius:8px;background:#fff; max-width:520px;">
+    <label for="ggmlModelSelect">Modell auswählen:</label>
+    <select id="ggmlModelSelect" style="min-width: 360px;"></select>
+    <span id="coremlHint" style="margin-left:10px; font-size:12px; color:#555;"></span>
+    <div style="margin-top:8px;">
+      <button type="button" id="saveModelBtn">🔧 Laden & speichern</button>
+      <span id="modelStatus" style="margin-left:10px;color:#007acc;"></span>
+    </div>
+    <div style="margin-top:8px; font-size:12px; color:#666;">
+      Quelle: <code>WHISPER_MODELS_DIR</code> oder Standard-Model-Verzeichnisse. 
+      CoreML wird automatisch genutzt, wenn <code>-encoder.mlmodelc</code> vorhanden ist.
+    </div>
+  </div>
+  <script>
+  (async function() {
+    async function refreshModels() {
+      const sel = document.getElementById('ggmlModelSelect');
+      const hint = document.getElementById('coremlHint');
+      const status = document.getElementById('modelStatus');
+      sel.innerHTML = '<option>⏳ Lädt…</option>';
+      hint.textContent = '';
+      status.textContent = '';
+
+      let data;
+      try {
+        const res = await fetch('/models');
+        data = await res.json();
+      } catch (e) {
+        sel.innerHTML = '<option>Fehler beim Laden</option>';
+        status.textContent = '❌ /models nicht erreichbar';
+        return;
+      }
+      sel.innerHTML = '';
+      let current = data.current || '';
+      (data.models || []).forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.path;
+        opt.textContent = m.name + (m.has_coreml ? '  (CoreML ✓)' : '');
+        if (m.path === current) opt.selected = true;
+        sel.appendChild(opt);
+      });
+
+      if (!sel.value && data.models && data.models.length) {
+        sel.value = data.models[0].path;
+      }
+      // CoreML-Hinweis
+      const chosen = (data.models || []).find(x => x.path === sel.value);
+      hint.textContent = chosen && chosen.has_coreml ? 'CoreML-Encoder vorhanden' : 'kein CoreML-Encoder gefunden';
+    }
+
+    document.getElementById('ggmlModelSelect')?.addEventListener('change', (e) => {
+      const opt = e.target.selectedOptions[0];
+      const text = opt?.textContent || '';
+      const hasCoreML = /CoreML ✓/.test(text);
+      document.getElementById('coremlHint').textContent = hasCoreML ? 'CoreML-Encoder vorhanden' : 'kein CoreML-Encoder gefunden';
+    });
+
+    document.getElementById('saveModelBtn')?.addEventListener('click', async () => {
+      const sel = document.getElementById('ggmlModelSelect');
+      const status = document.getElementById('modelStatus');
+      status.textContent = '⏳ Speichere…';
+      try {
+        const fd = new FormData();
+        fd.append('model_path', sel.value);
+        const res = await fetch('/set_model', { method: 'POST', body: fd });
+        const j = await res.json();
+        if (j.ok) status.textContent = '✅ Modell gesetzt';
+        else status.textContent = '❌ ' + (j.error || 'Unbekannter Fehler');
+      } catch (e) {
+        status.textContent = '❌ Speichern fehlgeschlagen';
+      }
+    });
+
+    await refreshModels();
+  })();
+  </script>
+
 
   {% if saved %}
     <p class="info">✅ Einstellungen wurden gespeichert!</p>

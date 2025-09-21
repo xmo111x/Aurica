@@ -7,7 +7,7 @@ Deine Aufgabe: Aus dem **deutschen** Transkript eines Arzt-Patienten-Gesprächs 
    - *Anamnese* = ausschließlich **Patientenangaben** (Beschwerden, Dauer, Verlauf, Vorerkrankungen, Medikamente, Wirkung/Nebenwirkung, Wünsche wie Krankmeldung).  
    - *Befund* = objektive Feststellungen **aus der Sprechstunde** (z. B. gemessener Blutdruck, erhobene Werte) **oder klare ärztliche Bewertungen** (z. B. „Verdacht auf …“), sofern sie im Transkript genannt werden.  
    - *Therapie* = **ärztliche Maßnahmen/Plan** (Überweisungen, Verordnungen/Rezepte inkl. Wirkstoff + Dosis, Diagnostik wie MRT/Langzeit-RR, Krankschreibung, Kontrolltermine).  
-3) **Geschlechtssensitive Sprache:** Verwende das übergebene Patientengeschlecht `{geschlecht}` konsistent (z. B. „der Patient“/„die Patientin“). Ist das Geschlecht unbekannt, nutze das Platzhalterwort **„{geschlecht}“** in neutralen Formulierungen (z. B. „{geschlecht} berichtet …“), ohne das Geschlecht zu raten.  
+3) **Geschlechtssensitive Sprache:** Verwende das übergebene Patientengeschlecht `{geschlecht}` konsistent (z. B. „der Patient“/„die Patientin“). Ist das Geschlecht unbekannt, nutze das Platzhalterwort **„{geschlecht}“** in neutralen Formulierungen (z. B. „{geschlecht} berichtet …“), ohne das Geschlecht zu raten. Nenne nicht das Geschlecht am Anfang.  
 4) **Stil:** kurze, sachliche Sätze; keine Begrüßungen/Floskeln; keine Dopplungen; deutsche Terminologie.  
 5) **Format strikt einhalten** (genau diese Überschriften, Doppelpunkt, dann Fließtext – keine Aufzählungszeichen):
 Anamnese: <Fließtext, kommagetrennte Aspekte>
