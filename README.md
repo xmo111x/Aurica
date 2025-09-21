@@ -28,7 +28,29 @@ Jedoch stellt meiner Meinung nach die Cloudanbindung dieser Programme im medizin
 <img width="2040" height="1213" alt="Bildschirmfoto 2025-08-27 um 16 58 56" src="https://github.com/user-attachments/assets/f26f78db-51c5-42ac-93f1-d68a023d108d" />
 
 
+v2025_9_2.7 
 
+Folgende Änderungen:
+
+- Die Aufnahme mit Übertragung der .wav Datei nach Beendigung der Aufnahme zum Transkript und anschließende Übergabe an die KI zum zusammenfassen hat einfach zu lange gedauert sodass ich mich ab jetzt nur noch auf den Live Transkript konzentriere. Während der Aufnahme werden Chunks nach Heuristik erzeugt mit einer gewissen Überlappung so dass während der Aufnahme der Transkript erfolgt. Die Qualität des Transkript ist zwar minimal schlechter aber die gesamte Verarbeitungszeit ist deutlich schneller. 
+
+- Der Transkript läuft über whisper.cpp mit ggml mit CoreML Unterstützung. Der beste Kompromiss zwischen Geschwindigkeit und Qualität ist bei mir ggml-medium.bin. Auch die quantisierten Modelle q5 und q8 sind gut. 
+
+- Es gibt eine Live Simulation aus einer .wav Datei. Hierbei wird nicht einfach die .wav Datei hochgeladen (Wie bei Datei Upload ganz unten) sondern die Aufnahme mit Live Transkript simuliert. 
+
+- Zur Verbesserung der Aufnahme nutze ich folgendes Tischmikrofon mit 4 Microfonen: beyerdynamic Space
+
+GDT:
+
+Anbei auch noch die Bilder zur GDT Anbindung. Hierzu hätte ich noch eine Frage wo mir vielleicht jemand weiterhelfen kann. Was kann man im Bereich Parameter in der Rubrik Geräteanbindung eingeben. Ich würde gerne gleich die Aufnahme starten wenn ich das Gerät in T2med über das EKG Symbol anklicke. Aktuell wird nur GDT Datei erzeugt. 
+
+Themen in Arbeit:
+
+- Starten der Aufnahme über Gerätestart. s.o.
+
+- 1 Klick Übernahme von Anamnese, Befund und Therapie mit automatischem Speichern der Änderungen. Hierzu wäre eine API bei T2med schön. Auch wenn die GDT Datei jetzt editierter ist will ich den Text in Anamnese, Befund und Diagnose in T2med haben. 
+
+- Benutzerstruktur aufbauen sodass mehrere Nutzer parallel arbeiten können. 
 
 
 
