@@ -40,9 +40,6 @@ Folgende Änderungen:
 
 - Zur Verbesserung der Aufnahme nutze ich folgendes Tischmikrofon mit 4 Microfonen: beyerdynamic Space
 
-GDT:
-
-Anbei auch noch die Bilder zur GDT Anbindung. Hierzu hätte ich noch eine Frage wo mir vielleicht jemand weiterhelfen kann. Was kann man im Bereich Parameter in der Rubrik Geräteanbindung eingeben. Ich würde gerne gleich die Aufnahme starten wenn ich das Gerät in T2med über das EKG Symbol anklicke. Aktuell wird nur GDT Datei erzeugt. 
 
 Themen in Arbeit:
 
