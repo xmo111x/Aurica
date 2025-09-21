@@ -6,7 +6,7 @@ import shutil
 import tempfile
 
 # ── Neu: konfigurierbar per ENV (mit sinnvollen Defaults) ────────────────
-MODEL_PATH = os.getenv("WHISPER_MODEL", os.path.abspath("/Users/Mesut/whisper_project/web_app/whisper.cpp/models/ggml-large-v3-turbo-q5_0.bin"))
+MODEL_PATH = os.getenv("WHISPER_MODEL", os.path.abspath("/Users/Mesut/whisper_project/web_app/whisper.cpp/models/ggml-small-q8_0.bin"))
 CLI_PATH   = os.getenv("WHISPER_CLI",   os.path.abspath("/Users/Mesut/whisper_project/web_app/whisper.cpp/build/bin/whisper-cli"))
 DOMAIN_PROMPT = os.getenv("WHISPER_PROMPT", "").strip()
 
