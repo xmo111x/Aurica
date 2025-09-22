@@ -43,9 +43,9 @@ Folgende Änderungen:
 
 Themen in Arbeit:
 
-- Starten der Aufnahme über Gerätestart. s.o.
+- Starten der Aufnahme über Gerätestart im PVS (T2med)
 
-- 1 Klick Übernahme von Anamnese, Befund und Therapie mit automatischem Speichern der Änderungen. Hierzu wäre eine API bei T2med schön. Auch wenn die GDT Datei jetzt editierter ist will ich den Text in Anamnese, Befund und Diagnose in T2med haben. 
+- 1 Klick Übernahme von Anamnese, Befund und Therapie mit automatischem Speichern der Änderungen in das PVS
 
 - Benutzerstruktur aufbauen sodass mehrere Nutzer parallel arbeiten können. 
 
