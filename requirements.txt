@@ -1,2 +1,10 @@
-Flask>=3.0.0
-requests>=2.31.0
+Flask>=3.0,<4
+requests>=2.31,<3
+rapidfuzz>=3.9,<4
+
+# Desktop-Wrapper
+pywebview>=4.4
+pyautogui>=0.9
+
+# Windows-spezifisch
+pywin32; sys_platform == 'win32'

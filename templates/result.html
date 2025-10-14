@@ -4,6 +4,12 @@
   <meta charset="UTF-8">
   <title>Anamnese-Ergebnis</title>
   <style>
+    /* Schiebt ein Element in .btn-row nach rechts */
+    .push-right { margin-left: auto; }
+
+    /* (optional) sorgt dafür, dass das Formular keinen Zeilenumbruch erzeugt */
+    .actions form { display: inline-block; }
+
     body {
       font-family: Arial, sans-serif;
       margin: 0;
@@ -121,6 +127,29 @@
     .links {
       margin-top: 20px;
     }
+    .result-bar{
+        display:flex;
+        align-items:center;
+        gap:.75rem;
+        padding:.5rem 0;
+    }
+    .result-bar .actions{ margin-left:auto; }  /* schiebt alles in      .actions nach rechts */
+    .btn-danger{
+        background:#d9534f; color:#fff; border:0; padding:.5rem .75rem; border-radius:.375rem; cursor:pointer;
+    }
+    .btn-danger:hover{ filter:brightness(.95); }
+    .file-label{
+      font-weight: 600;
+      font-size: .95rem;
+      color: #6b7b8a;
+      margin-left: .5rem;
+    }
+    .file-meta{
+      font-weight: 500;
+      font-size: .95rem;
+      color: #96a3af;
+      margin-left: .45rem;
+    }
   </style>
 </head>
 <body style="display: flex;">
@@ -128,12 +157,31 @@
   {% include "sidebar.html" %}
 
   <div class="main" style="margin-left: 220px;">
-    <h2>🩺 Anamnese-Ergebnis</h2>
+    {% set base   = filename.replace('_anamnese.txt','') if filename else '' %}
+    {% set parts  = base.split('_') if base else [] %}
+    {% set inits  = parts[0] if parts|length > 0 else '' %}
+    {% set pnr    = parts[1] if parts|length > 1 else '' %}
+    {% set ymd    = parts[2] if parts|length > 2 else '' %}   {# z.B. 20250922 #}
+    {% set hms    = parts[3] if parts|length > 3 else '' %}   {# z.B. 213800   #}
+
+    {# Kurzlabel wie in der Sidebar, z.B. X.X. 999999 #}
+    {% set label  = (inits[0] ~ '.' ~ inits[1] ~ '. ' ~ pnr) if inits|length >= 2 and pnr else '' %}
+
+    {# Datum/Uhrzeit formatiert: 22.09.2025 21:38 Uhr #}
+    {% set date_str = (ymd[6:8] ~ '.' ~ ymd[4:6] ~ '.' ~ ymd[0:4]) if ymd|length == 8 else '' %}
+    {% set time_str = (hms[0:2] ~ ':' ~ hms[2:4] ~ ' Uhr') if hms|length >= 4 else '' %}
+
+    <h2>
+      🩺 Ergebnis
+      {% if label %}<span class="file-label">{{ label }}</span>{% endif %}
+      {% if date_str %}<span class="file-meta">{{ date_str }} {{ time_str }}</span>{% endif %}
+    </h2>
 
     <!-- Versteckte Original-Ausgabe (für initiales Parsen) -->
     <textarea id="rawAnamnese" style="display:none;">{{ anamnese }}</textarea>
 
     <!-- Unsichtbarer Dialogtext für Mitspeichern -->
+    
     {% if dialog %}
       <textarea id="dialogText" style="display:none;">{{ dialog }}</textarea>
     {% endif %}
@@ -144,6 +192,9 @@
       <textarea id="fldAnamnese" placeholder="Anamnese-Inhalt …"></textarea>
       <div class="btn-row">
         <button class="btn-secondary" type="button" onclick="copyField('fldAnamnese')">📋 In Zwischenablage kopieren</button>
+        <!-- im Anamnese-Block in der btn-row -->
+        <button class="btn-primary" type="button"
+                onclick="sendToT2medFrom('fldAnamnese')">🔁 Nach T2med einfügen</button>
         <button class="btn-outline" type="button" onclick="clearField('fldAnamnese')">🧹 Leeren</button>
       </div>
     </div>
@@ -154,7 +205,9 @@
       <textarea id="fldBefund" placeholder="Befund-Inhalt …"></textarea>
       <div class="btn-row">
         <button class="btn-secondary" type="button" onclick="copyField('fldBefund')">📋 In Zwischenablage kopieren</button>
-        <button class="btn-outline" type="button" onclick="clearField('fldBefund')">🧹 Leeren</button>
+        <button class="btn-primary" type="button"
+                onclick="sendToT2medMode('fldBefund','befund')">🔁 Nach T2med einfügen</button>
+        <button class="btn-outline"   type="button" onclick="clearField('fldBefund')">🧹 Leeren</button>
       </div>
     </div>
 
@@ -164,16 +217,29 @@
       <textarea id="fldTherapie" placeholder="Therapie-Inhalt …"></textarea>
       <div class="btn-row">
         <button class="btn-secondary" type="button" onclick="copyField('fldTherapie')">📋 In Zwischenablage kopieren</button>
-        <button class="btn-outline" type="button" onclick="clearField('fldTherapie')">🧹 Leeren</button>
+        <button class="btn-primary" type="button"
+                onclick="sendToT2medMode('fldTherapie','therapie')">🔁 Nach T2med einfügen</button>
+        <button class="btn-outline"   type="button" onclick="clearField('fldTherapie')">🧹 Leeren</button>
       </div>
     </div>
 
     <!-- Globale Aktionen -->
     <div class="btn-row">
       <button class="btn-secondary" type="button" onclick="copyAll()">📋 Alles kopieren</button>
-      <button class="btn-primary" type="button" onclick="saveAll()">💾 Speichern</button>
+      <button class="btn-primary"   type="button" onclick="saveAll()">💾 Speichern</button>
+
+      <div class="actions push-right">
+        {% if filename %}
+        <form method="POST" action="{{ url_for('delete_record') }}"
+              onsubmit="return confirm('Diese Analyse inkl. Dateien wirklich löschen?');">
+          <input type="hidden" name="basename" value="{{ filename.replace('_anamnese.txt','') }}">
+          <button type="submit" class="btn-danger">🗑️ Löschen</button>
+        </form>
+        {% endif %}
+      </div>
     </div>
 
+    
     <!-- Feedback-Nachricht -->
     <p id="saveInfo" class="info" style="display: none;">✅ Gespeichert</p>
 
@@ -281,7 +347,80 @@
       document.getElementById("fldBefund").value   = bef  || "";
       document.getElementById("fldTherapie").value = ther || "";
     })();
-  </script>
+
+      
+      async function sendToT2medMode(textareaId, mode){
+        const el  = document.getElementById(textareaId);
+        const txt = (el?.value || '').trim();
+        if (!txt) { alert('Kein Text.'); return; }
+
+        // Neue Bridge-Methode: paste_to_t2med_mode(text, mode, window_title?)
+        if (window.pywebview?.api?.paste_to_t2med_mode) {
+          try {
+            const res = await window.pywebview.api.paste_to_t2med_mode(txt, mode, 'T2med');
+            if (!res || !res.ok) {
+              const msg = res && res.error ? res.error : 'unbekannt';
+              alert('Native Steuerung fehlgeschlagen: ' + msg);
+            }
+          } catch(e) {
+            alert('Native Steuerung Fehler: ' + (e.message || e));
+          }
+        } else {
+          // Fallback-Hinweis, falls alte Client-Version ohne die neue Methode
+          alert('Diese Funktion erfordert die aktuelle Aurica Client-App.');
+        }
+      }
+      // Zeigt an, wenn die pywebview Bridge bereit ist
+       window.addEventListener('pywebviewready', function () {
+         console.log('[Aurica] pywebview ready');
+         const badge = document.createElement('div');
+         badge.textContent = 'Aurica-Client verbunden';
+         badge.style.cssText = 'position:fixed;right:10px;bottom:10px;background:#28a745;color:#fff;padding:6px 10px;border-radius:6px;font:12px/1.2 system-ui';
+         document.body.appendChild(badge);
+       });
+
+       function hasApi(fnName) {
+         const ok = !!(window.pywebview && window.pywebview.api && (!fnName || window.pywebview.api[fnName]));
+         if (!ok) console.warn('[Aurica] Bridge fehlt oder Methode nicht vorhanden:', fnName, window.pywebview);
+         return ok;
+       }
+
+       // Bestehende Funktion (Anamnese)
+       async function sendToT2medFrom(textareaId) {
+         const el = document.getElementById(textareaId);
+         const txt = (el?.value || '').trim();
+         if (!txt) { alert('Kein Text.'); return; }
+
+         if (!hasApi('paste_to_t2med')) { alert('Native Steuerung nicht verfügbar. Bitte Aurica Client-App prüfen.'); return; }
+
+         try {
+           const res = await window.pywebview.api.paste_to_t2med(txt, 'T2med');
+           console.log('[Aurica] paste_to_t2med →', res);
+           if (!res || !res.ok) alert('Native Steuerung fehlgeschlagen: ' + (res?.error || 'unbekannt'));
+         } catch (e) {
+           console.error(e);
+           alert('Native Steuerung Fehler: ' + (e.message || e));
+         }
+       }
+
+       // NEU: Befund/Therapie (modusgesteuert)
+       async function sendToT2medMode(textareaId, mode){
+         const el  = document.getElementById(textareaId);
+         const txt = (el?.value || '').trim();
+         if (!txt) { alert('Kein Text.'); return; }
+
+         if (!hasApi('paste_to_t2med_mode')) { alert('Diese Funktion erfordert die aktuelle Aurica Client-App.'); return; }
+
+         try {
+           const res = await window.pywebview.api.paste_to_t2med_mode(txt, mode, 'T2med');
+           console.log('[Aurica] paste_to_t2med_mode(', mode, ') →', res);
+           if (!res || !res.ok) alert('Native Steuerung fehlgeschlagen: ' + (res?.error || 'unbekannt'));
+         } catch(e) {
+           console.error(e);
+           alert('Native Steuerung Fehler: ' + (e.message || e));
+         }
+       }
+</script>
 </body>
 </html>
 

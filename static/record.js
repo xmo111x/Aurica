@@ -224,18 +224,18 @@ const baseAudioConstraints = {
   const transcriptEl = document.getElementById("liveTranscript");
   if (!startBtn || !stopBtn) return;
 
-  // ---- Tuning per localStorage (Werte in Millisekunden / Float) ----
-  const SEGMENT_MS     = parseInt(localStorage.getItem('SEGMENT_MS')     || '10000', 10); // max-Chunks
-  const MIN_SEG_MS     = parseInt(localStorage.getItem('MIN_SEG_MS')     || '4500', 10);  // min-Länge, bevor wir an Stille schneiden
-  const OVERLAP_MS     = parseInt(localStorage.getItem('OVERLAP_MS')     || '700', 10);   // Überlappung
-  const VAD_WINDOW_MS  = parseInt(localStorage.getItem('VAD_WINDOW_MS')  || '50', 10);    // RMS-Fenster
-  const VAD_THRESH     = parseFloat(localStorage.getItem('VAD_THRESH')   || '0.006');     // ~ -42 dB
-  const VAD_HANG_MS    = parseInt(localStorage.getItem('VAD_HANG_MS')    || '450', 10);   // so lange still, bis Schnitt
+  // ---- Tuning per localStorage ----
+  const SEGMENT_MS     = parseInt(localStorage.getItem('SEGMENT_MS')     || '10000', 10);
+  const MIN_SEG_MS     = parseInt(localStorage.getItem('MIN_SEG_MS')     || '4500', 10);
+  const OVERLAP_MS     = parseInt(localStorage.getItem('OVERLAP_MS')     || '700', 10);
+  const VAD_WINDOW_MS  = parseInt(localStorage.getItem('VAD_WINDOW_MS')  || '50', 10);
+  const VAD_THRESH     = parseFloat(localStorage.getItem('VAD_THRESH')   || '0.006');
+  const VAD_HANG_MS    = parseInt(localStorage.getItem('VAD_HANG_MS')    || '450', 10);
 
   const live = {
     isRecording: false,
-    mediaRecorder: null,   // nur Mic-Modus
-    segmentTimer: null,    // nur Mic-Modus
+    mediaRecorder: null,
+    segmentTimer: null,
     rawStream: null,
     ctx: null,
     processedStream: null,
@@ -243,10 +243,8 @@ const baseAudioConstraints = {
     ext: "",
     sessionId: null,
     lastSeqShown: 0,
-    mode: "mic",           // "mic" oder "sim"
+    mode: "mic",
     simSource: null,
-
-    // PCM/VAD Zwischenspeicher (nur sim)
     pcmBuf: new Float32Array(0),
     carry:  new Float32Array(0),
     vadSilenceRun: 0,
@@ -406,27 +404,19 @@ const baseAudioConstraints = {
     function maybeFlush(cutIndex = -1, force = false) {
       const total = live.pcmBuf.length;
       if (!force) {
-        // Nichts zu flushen?
         if (total < MIN_SAMPLES && cutIndex < 0) return;
-        // wenn kein VAD-Schnitt gefunden und < MAX_SAMPLES -> warten
         if (cutIndex < 0 && total < MAX_SAMPLES) return;
       }
-      // Schnittposition bestimmen
       if (cutIndex < 0 || cutIndex > total) cutIndex = Math.min(total, MAX_SAMPLES);
       const chunkPart = live.pcmBuf.subarray(0, cutIndex);
       const payload   = concatFloat32(live.carry, chunkPart);
       const wavBlob   = wavFromFloat32(payload, SR);
-
-      // Senden
       sendChunkToServer(wavBlob, 'wav');
 
-      // neue Carry (Overlap vom Ende des Payloads)
       const carryLen = Math.min(OVERLAP_SAMP, payload.length);
       live.carry = payload.subarray(payload.length - carryLen);
-
-      // Rest im Buffer behalten
       live.pcmBuf = live.pcmBuf.subarray(cutIndex);
-      live.vadSilenceRun = 0; // zurücksetzen
+      live.vadSilenceRun = 0;
     }
 
     function rms(arr, start, len) {
@@ -439,7 +429,6 @@ const baseAudioConstraints = {
       const total = live.pcmBuf.length;
       if (total < VAD_WIN_SAMP) return;
 
-      // Fensterweise prüfen bis nahe an Max-Samples
       let idx = 0;
       let cutCandidate = -1;
       const maxScan = Math.min(total, MAX_SAMPLES);
@@ -448,7 +437,7 @@ const baseAudioConstraints = {
         if (r < VAD_THRESH) {
           live.vadSilenceRun += VAD_WIN_SAMP;
           if (live.vadSilenceRun >= VAD_HANG_SAMP && (idx + VAD_WIN_SAMP) >= MIN_SAMPLES) {
-            cutCandidate = idx + VAD_WIN_SAMP; // bis Ende der Stille
+            cutCandidate = idx + VAD_WIN_SAMP;
             break;
           }
         } else {
@@ -460,7 +449,6 @@ const baseAudioConstraints = {
       if (cutCandidate >= 0) {
         maybeFlush(cutCandidate, false);
       } else if (total >= MAX_SAMPLES) {
-        // Max erreicht -> hart schneiden
         maybeFlush(-1, true);
       }
     }
@@ -473,10 +461,8 @@ const baseAudioConstraints = {
       processVAD();
     };
 
-    // Dateiende => Rest flushen und normal stoppen
     source.onended = () => {
       if (live.isRecording && live.mode === "sim") {
-        // Alles was noch da ist, flushen
         if (live.pcmBuf.length > 0 || live.carry.length > 0) {
           maybeFlush(live.pcmBuf.length, true);
         }
@@ -484,7 +470,6 @@ const baseAudioConstraints = {
       }
     };
 
-    // Start!
     source.start(0);
   }
 
@@ -492,7 +477,6 @@ const baseAudioConstraints = {
     if (!live.isRecording) return;
     live.isRecording = false;
 
-    // Mic: Recorder stoppen; Sim: PCM-Flow beenden
     clearSegmentTimer();
     hardStopRecorder();
     live.pcmActive = false;
@@ -502,7 +486,6 @@ const baseAudioConstraints = {
 
     stopStreamsAndAudio();
 
-    // Analyse anstoßen
     setTimeout(async () => {
       if (!live.sessionId) return;
       statusEl.textContent = "Analyse läuft…";
@@ -556,7 +539,7 @@ const baseAudioConstraints = {
   startBtn.addEventListener("click", startLive);
   stopBtn.addEventListener("click", stopLive);
 
-  // Simulations-UI (Datei + Button)
+  // Simulations-UI (Datei + Button) – OHNE accept-Filter
   (function ensureSimulationUI() {
     const host = document.getElementById("liveTranskriptBlock") || document.body;
     const box = document.createElement("div");
@@ -574,8 +557,7 @@ const baseAudioConstraints = {
     label.style.minWidth = "180px";
 
     const file = document.createElement("input");
-    file.type = "file";
-    file.accept = "audio/*";
+    file.type = "file"; // KEIN accept -> alle Dateien sichtbar
 
     const btn = document.createElement("button");
     btn.type = "button";
@@ -614,3 +596,4 @@ const baseAudioConstraints = {
     }
   })();
 })();
+

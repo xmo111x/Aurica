@@ -1,6 +1,7 @@
 from flask import Flask, request, render_template, session, jsonify, redirect, url_for, flash
 from difflib import SequenceMatcher
 from collections import defaultdict
+from werkzeug.middleware.proxy_fix import ProxyFix
 import subprocess
 import shlex
 import os, requests, tempfile
@@ -10,11 +11,80 @@ import uuid
 import glob
 import shutil
 import time
+try:
+    from rapidfuzz import process, fuzz
+    USE_RAPIDFUZZ = True
+except Exception:
+    USE_RAPIDFUZZ = False
+
 
 from datetime import datetime
 from utils import transcribe_with_whispercpp, assign_speakers_llm, summarize_with_lmstudio, get_gespraechsdauer_from_vtt, MODEL_PATH
 
 app = Flask(__name__)
+
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+
+def _safe_unlink(path: str) -> bool:
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+            return True
+    except Exception as e:
+        print(f"⚠️ Löschen fehlgeschlagen: {path} -> {e}")
+    return False
+
+def _load_med_terms(path="medical_terms_de.txt"):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return [ln.strip() for ln in f if ln.strip() and not ln.startswith("#")]
+    except Exception:
+        return []
+
+def _match_case(src: str, cand: str) -> str:
+    # Groß-/Kleinschreibung vom Originalwort übernehmen
+    if src.isupper(): return cand.upper()
+    if src.istitle(): return cand[:1].upper() + cand[1:]
+    if src.islower(): return cand.lower()
+    return cand
+
+def med_postprocess(text: str, terms=None, cutoff=0.90) -> str:
+    import re
+    replaced = 0
+    if terms is None:
+        terms = _load_med_terms()
+    if not terms:
+        return text
+
+    tokens = re.findall(r"\w+|[^\w\s]+|\s+", text, flags=re.UNICODE)
+    out = []
+    for tok in tokens:
+        if tok.strip() and tok.isalpha() and len(tok) >= 4:  # Mini-Filter
+            if 'USE_RAPIDFUZZ' in globals() and USE_RAPIDFUZZ:
+                from rapidfuzz import process, fuzz
+                cand = process.extractOne(tok, terms, scorer=fuzz.WRatio)
+                if cand and (cand[1] / 100.0) >= cutoff:
+                    out.append(_match_case(tok, cand[0]))
+                    replaced += 1
+                else:
+                    out.append(tok)
+            else:
+                from difflib import get_close_matches
+                m = get_close_matches(tok, terms, n=1, cutoff=cutoff)
+                if m:
+                    out.append(_match_case(tok, m[0]))
+                    replaced += 1
+                else:
+                    out.append(tok)
+        else:
+            out.append(tok)
+
+    result = "".join(out)
+    try:
+        print(f"🔎 med_postprocess: backend={'rapidfuzz' if USE_RAPIDFUZZ else 'difflib'}, terms={len(terms)}, replacements={replaced}")
+    except Exception:
+        pass
+    return result
 
 def preprocess_audio_chunk_soft(input_path: str, output_path: str, timeout: int = 20) -> str:
     """
@@ -72,7 +142,7 @@ def list_available_models():
         b = base_name
         b = re.sub(r'-(?:q\d+(?:_\d+)?|Q\d+(?:_[A-Za-z0-9]+)*)$', '', b)
         # map large-v3-turbo -> large-v3
-        b = b.replace('large-v3-turbo', 'large-v3')
+        b = b.replace('large-v3-turbo-q5_0', 'large-v3')
         cand = [os.path.join(dirpath, f"{b}-encoder.mlmodelc")]
         return cand
 
@@ -508,7 +578,7 @@ def index():
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     basename = f"{initialen}_{patientennr}_{timestamp}"
-
+    
     if request.method == 'POST':
         file = request.files.get('audiofile')
         if file and file.filename:
@@ -549,7 +619,11 @@ def index():
                 dialog = "\n".join(assign_speakers_llm(blocks, lmmodel_name))
             else:
                 dialog = "\n".join([f"Unbekannt: {b.get('text', '')}" for b in blocks])
-
+            
+            # 4.1)Fuzzy Match
+            dialog = med_postprocess(dialog)  # sanfte Fachwort-Korrektur
+            anamnese = summarize_with_lmstudio(dialog, geschlecht, lmmodel_name)
+            
             # 5) Zusammenfassung
             if dialog.strip():
                 anamnese = summarize_with_lmstudio(dialog, geschlecht, lmmodel_name)
@@ -714,6 +788,46 @@ def admin_view(filename):
         gesprächsdauer=gesprächsdauer,
         verarbeitungsdauer=verarbeitungsdauer
     )
+
+@app.route("/delete_record", methods=["POST"])
+def delete_record():
+    basename = (request.form.get("basename") or "").strip()
+    if not basename:
+        return jsonify({"error": "basename missing"}), 400
+
+    # sehr defensive Validierung (XX_999999_YYYYMMDD_HHMMSS)
+    if not re.fullmatch(r"[A-Za-z]{2}_[0-9]+_\d{8}_\d{6}", basename):
+        return jsonify({"error": "invalid basename"}), 400
+
+    # Ziele zusammenstellen
+    to_delete = [
+        os.path.join(TRANSKRIPT_DIR, f"{basename}_anamnese.txt"),
+        os.path.join(TRANSKRIPT_DIR, f"{basename}_transkript.txt"),
+        os.path.join(TRANSKRIPT_DIR, f"{basename}.meta.json"),
+        os.path.join(TRANSKRIPT_DIR, f"{basename}.wav.vtt"),
+        os.path.join(TRANSKRIPT_DIR, f"{basename}.vtt"),
+        os.path.join(UPLOAD_FOLDER,   f"{basename}.wav"),
+        os.path.join(UPLOAD_FOLDER,   f"{basename}_clean.wav"),
+    ]
+
+    deleted, missing = [], []
+    for p in to_delete:
+        if _safe_unlink(p):
+            deleted.append(p)
+        else:
+            if not os.path.exists(p):
+                missing.append(p)
+
+    # (optional) kurze Log-Ausgabe
+    print(f"🗑️ delete_record({basename}): gelöscht={len(deleted)}, fehlten={len(missing)}")
+
+    # UI: zurück auf Startseite + Nachricht
+    try:
+        flash(f"Datensatz {basename} gelöscht ({len(deleted)} Datei(en)).", "success")
+    except Exception:
+        pass
+    return redirect(url_for("index"))
+
 
 @app.route('/admin/')
 def admin_index():
@@ -975,6 +1089,9 @@ def process_stream():
     if not dialog.strip():  # Fallback, falls etwas schiefgeht
         dialog = final_txt or live_text
 
+    # Fuzzy-Match
+    dialog = med_postprocess(dialog)
+    anamnese = summarize_with_lmstudio(dialog, geschlecht, lmmodel_name)
 
     # Zusammenfassung
     if dialog.strip():
@@ -1093,5 +1210,7 @@ def set_model_route():
     return jsonify({"ok": True, "model_path": model_path})
 
 if __name__ == '__main__':
-    app.run(debug=False, host='0.0.0.0', port=5001, ssl_context=('cert.pem', 'key.pem'))
+    app.run(host='127.0.0.1', port=5001)   # kein ssl_context hier!
+
+
 

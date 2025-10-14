@@ -1,0 +1,127 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2822
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\froman\fcharset0 Times-Bold;\f1\froman\fcharset0 Times-Roman;\f2\fmodern\fcharset0 Courier;
+\f3\froman\fcharset0 TimesNewRomanPSMT;}
+{\colortbl;\red255\green255\blue255;\red0\green0\blue0;}
+{\*\expandedcolortbl;;\cssrgb\c0\c0\c0;}
+{\*\listtable{\list\listtemplateid1\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{decimal\}}{\leveltext\leveltemplateid1\'01\'00;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listname ;}\listid1}
+{\list\listtemplateid2\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat3\levelspace360\levelindent0{\*\levelmarker \{decimal\}}{\leveltext\leveltemplateid101\'01\'00;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listname ;}\listid2}
+{\list\listtemplateid3\listhybrid{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{disc\}}{\leveltext\leveltemplateid201\'01\uc0\u8226 ;}{\levelnumbers;}\fi-360\li720\lin720 }{\listname ;}\listid3}
+{\list\listtemplateid4\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat4\levelspace360\levelindent0{\*\levelmarker \{decimal\}}{\leveltext\leveltemplateid301\'01\'00;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listname ;}\listid4}
+{\list\listtemplateid5\listhybrid{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{disc\}}{\leveltext\leveltemplateid401\'01\uc0\u8226 ;}{\levelnumbers;}\fi-360\li720\lin720 }{\listname ;}\listid5}}
+{\*\listoverridetable{\listoverride\listid1\listoverridecount0\ls1}{\listoverride\listid2\listoverridecount0\ls2}{\listoverride\listid3\listoverridecount0\ls3}{\listoverride\listid4\listoverridecount0\ls4}{\listoverride\listid5\listoverridecount0\ls5}}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\deftab720
+\pard\pardeftab720\sa321\partightenfactor0
+
+\f0\b\fs48 \cf0 \expnd0\expndtw0\kerning0
+1) Einmalige Einrichtung (empfohlen)\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa240\partightenfactor0
+\ls1\ilvl0
+\fs24 \cf0 \kerning1\expnd0\expndtw0 {\listtext	1	}\expnd0\expndtw0\kerning0
+App richtig ablegen
+\f1\b0 \uc0\u8232 Verschiebe 
+\f2\fs26 AuricaClient.app
+\f1\fs24  nach 
+\f0\b /Applications
+\f1\b0  (nicht Desktop/Downloads).\
+\ls1\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 {\listtext	2	}\expnd0\expndtw0\kerning0
+(Optional aber sehr hilfreich) Bundle-ID & Signatur setzen
+\f1\b0 \uc0\u8232 Baue die App mit eigener Bundle-ID:\
+\pard\pardeftab720\partightenfactor0
+
+\f2\fs26 \cf0 \
+\AppleHighlight-1 \AppleHilightClrSch-5 pyinstaller --clean --noconsole --windowed \\\
+  --name AuricaClient \\\
+  --osx-bundle-identifier de.aurica.client \\\
+  client_app.py\AppleHighlight0 \AppleHilightClrSch0 \
+\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f1\fs24 \cf0 Dann ad-hoc signieren (kein Entwicklerkonto n\'f6tig):\
+\pard\pardeftab720\partightenfactor0
+
+\f2\fs26 \cf0 \
+\AppleHighlight-1 \AppleHilightClrSch-5 cat > entitlements.plist <<'PLIST'\
+<?xml version="1.0" encoding="UTF-8"?>\
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" \\\
+ "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\
+<plist version="1.0">\
+ <dict>\
+  <key>com.apple.security.automation.apple-events</key><true/>\
+ </dict>\
+</plist>\
+PLIST\
+\
+codesign --force --deep --sign - \\\
+  --entitlements entitlements.plist \\\
+  dist/AuricaClient.app\
+xattr -dr com.apple.quarantine dist/AuricaClient.app\
+mv dist/AuricaClient.app /Applications/\
+\AppleHighlight0 \AppleHilightClrSch0 \
+\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa240\partightenfactor0
+\ls2\ilvl0
+\f0\b\fs24 \cf0 \kerning1\expnd0\expndtw0 {\listtext	3	}\expnd0\expndtw0\kerning0
+Bedienungshilfen freigeben
+\f1\b0 \uc0\u8232 Systemeinstellungen 
+\f3 \uc0\u8594 
+\f1  Datenschutz & Sicherheit 
+\f3 \uc0\u8594 
+\f1  
+\f0\b Bedienungshilfen
+\f1\b0 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa240\partightenfactor0
+\ls3\ilvl0\cf0 \kerning1\expnd0\expndtw0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+Schloss unten links \'f6ffnen\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa240\partightenfactor0
+\ls3\ilvl0
+\f0\b \cf0 \kerning1\expnd0\expndtw0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+AuricaClient
+\f1\b0  per \'84+\'93 hinzuf\'fcgen (Pfad: /Applications/AuricaClient.app)\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa240\partightenfactor0
+\ls3\ilvl0\cf0 \kerning1\expnd0\expndtw0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+Schalter 
+\f0\b aktivieren
+\f1\b0 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa240\partightenfactor0
+\ls4\ilvl0
+\f0\b \cf0 \kerning1\expnd0\expndtw0 {\listtext	4	}\expnd0\expndtw0\kerning0
+Automation freigeben
+\f1\b0 \uc0\u8232 Systemeinstellungen 
+\f3 \uc0\u8594 
+\f1  Datenschutz & Sicherheit 
+\f3 \uc0\u8594 
+\f1  
+\f0\b Automatisierung
+\f1\b0 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa240\partightenfactor0
+\ls5\ilvl0\cf0 \kerning1\expnd0\expndtw0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+In der Liste 
+\f0\b AuricaClient
+\f1\b0  ausw\'e4hlen\
+\ls5\ilvl0\kerning1\expnd0\expndtw0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+Schalter bei 
+\f0\b \'84System Events\'93
+\f1\b0  (und falls vorhanden \'84java\'93/\'84T2med\'93) 
+\f0\b aktivieren
+\f1\b0 \
+\pard\pardeftab720\sa240\partightenfactor0
+\cf0 Falls AuricaClient dort 
+\f0\b noch nicht
+\f1\b0  erscheint: App starten, im UI einmal \'84Nach T2med einf\'fcgen\'93 dr\'fccken 
+\f3 \uc0\u8594 
+\f1  nun sollte der Systemdialog erscheinen. Erlauben.\
+\
+Falls Mikrophone nicht funktioniert:\
+\AppleHighlight-1 \AppleHilightClrSch-5 APP="/Applications/AuricaClient.app"\
+plutil -insert NSMicrophoneUsageDescription -string "Mikrofon wird zur Sprachaufnahme ben\'f6tigt." "$APP/Contents/Info.plist" 2>/dev/null || \\\
+plutil -replace NSMicrophoneUsageDescription -string "Mikrofon wird zur Sprachaufnahme ben\'f6tigt." "$APP/Contents/Info.plist"\
+\
+# (optional, schadet nicht)\
+plutil -insert NSCameraUsageDescription -string "Kamera wird nicht genutzt." "$APP/Contents/Info.plist" 2>/dev/null || true\
+\
+# ad-hoc signieren (lokal reicht das)\
+codesign --force --deep --sign - "$APP"\
+\AppleHighlight0 \AppleHilightClrSch0 \
+}

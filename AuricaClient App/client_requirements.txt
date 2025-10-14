@@ -1,0 +1,6 @@
+pywebview>=4.4
+pyobjc-core>=10.1
+pyobjc-framework-Cocoa>=10.1
+pyobjc-framework-WebKit>=10.1
+pyautogui>=0.9
+pywin32; sys_platform == 'win32'
