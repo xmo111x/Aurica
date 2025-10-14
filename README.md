@@ -382,5 +382,25 @@ Themen in Arbeit:
 - Benutzerstruktur aufbauen sodass mehrere Nutzer parallel arbeiten können. 
 
 
+v2025.10.1
+
+Änderungen:
+-    1 Klick Übernahme von Anamnese, Befund und Therapie
+    o    Die Umsetzung der Übernahme von Anamnese, Befund und Therapie in T2med gestaltete sich doch etwas komplizierter als gedacht. Leider ist es aus sicherheitstechnischen Gründen nicht möglich aus einem Browser heraus eine andere App zu steuern. Also musste ich eine Client App entwickeln. Diese App zu bauen hat fast genauso lang gedauert wie die erste Version der Server App. Die App steht bei Github unter AuricaClient App zum Download. Der Zugriff auf Aurica kann aber weiterhin auch über den Browser über die IP Adresse des Servers erfolgen. Dann funktioniert aber der Button natürlich nicht und man muss den Text mit dem Button „in Zwischenablage kopieren“ und einfügen wie bisher.
+    o    Die AuricaClient App funktioniert auf Windows und MacOs und wird per Pyinstaller installiert. Siehe die Installationsanleitung auf Github. Durch klick auf den Button „Nach T2med einfügen“ wird der Text in dem obrigen Textfeld entsprechend unter Anamnese, Befund oder Therapie nach T2med mit Tastatureingabefolge automatisiert übernommen. (Copy Text, Fokus auf T2med, a, Enter, Paste, Enter). Zwischen den Tastatureingaben wird ein delay gesetzt. Diesen habe ich an meine ClientPC Performance angepasst und könnte bei unterschiedlicher Ausstattung auch geändert werden. Dies müsste unter client_app.py vor dem build der .exe bzw app Datei geändert werden. Ich hoffe diese Tastatureingabe stellt keine Verletzung der Nutzungsbedingungen von T2med dar.  Nochmal ein zwinkern an T2med. Eine API wäre schön da die Eingabe über Tastaturfolge Fehleranfällig ist. 
+-    Fuzzy Match mit Erstellung einer medical_terms_de.txt
+    o    Was ist Fuzzy Matching? Du hast eine Liste medizinischer Fachbegriffe. Für jedes Wort im Transkript suchen wir den ähnlichsten Begriff aus dieser Liste. Gibt die Ähnlichkeit (Score 0–1) ≥ cutoff (z. B. 0,90), ersetzen wir das Wort durch den Fachbegriff (inkl. passender Groß-/Kleinschreibung). So wird z. B. „Rhinorhoe“ → „Rhinorrhö“ oder „krankschreibung“ → „Krankmeldung“.
+-    Löschen Button auf result.html Seite 
+-    Auf der Ergebnis Seite werden nun der Dateiname mit Datum und Uhrzeit gezeigt
+-    Versionierung geändert.
+
+Themen in Arbeit:
+-    Der geänderte Text sollte bei Button klick automatisch gespeichert werden. Ich habe überlegt eine originale Textversion sowie geänderte Textversion zu erstellen. Damit könnte man eine Korrektur nachvollziehen und eventuell mit dieser Änderung die KI „tunen“. (Ich merke ich habe wieder zu viele Ideen im Kopf)
+-    Starten der Aufnahme über Gerätestart. Ich bin noch nicht dazu gekommen die GDT-Spezifikationen und das GDT Mapping anzuschauen. 
+-    Benutzerstruktur aufbauen, sodass mehrere Nutzer parallel arbeiten können. 
+-    Automatische Löschung der Audiodateien nach einer gewissen Zeit damit der Server nicht vollläuft. 
+-    Verbesserung Qualität der Zusammenfassung. Ich hatte mal probeweise auf gpt-oss 20b anstatt mistral 7b umgestellt. Leider ist die Verarbeitungszeit bei besserer Qualität zu lang. Ich denke hier muss ich noch am Prompt arbeiten. Hinsichtlich der Transkription mit ggml-medium.bin bin ich zufrieden, aber ich würde gerne wieder die Sprecherdiarisierung versuchen da ich mir dadurch auch eine bessere Qualität erhoffe. 
+
+
 
 
